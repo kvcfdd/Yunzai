@@ -29,6 +29,9 @@ mcp:
   #   - name: my-tools
   #     url: http://localhost:3000/mcp
 
+# 群聊记录携带条数，0 则不携带
+group_history_count: 30
+
 # 会话配置
 conversation:
-  max_history: 30 # 记忆长度，单位为消息轮数
+  max_history: 30 # 对话历史长度，单位为消息轮数
