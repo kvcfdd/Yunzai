@@ -6,6 +6,7 @@
 !/plugins/adapter
 !/plugins/system
 !/plugins/other
+!/plugins/aigc-chat
 /renderers/*/config.yaml
 /resources
 /dump.rdb
