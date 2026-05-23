@@ -1,0 +1,34 @@
+# AIGC 开关
+enable: true
+
+# AIGC Provider: openai | gemini
+provider: openai
+
+# OpenAI 兼容接口
+openai:
+  endpoint: https://api.openai.com # 可替换为兼容 OpenAI API 的其他服务地址
+  api_key: "" # 多 Key 用英文逗号分隔，如 "sk-xxx,sk-yyy"
+  model: gpt-4o-mini # 模型
+  max_tokens: 2048 # 输出最大长度
+  temperature: 0.9 # 输出随机程度(0-1，值越大输出越随机)
+
+# Google Gemini
+gemini:
+  endpoint: https://generativelanguage.googleapis.com # 可替换为兼容 Google Gemini API 的反代地址
+  api_key: "" # 多 Key 用英文逗号分隔，如 "xxx,yyy"
+  model: gemini-3.5-flash # 模型
+  max_tokens: 2048 # 输出最大长度
+  temperature: 0.9 # 输出随机程度(0-1，值越大输出越随机)
+
+# 系统提示词
+system_prompt: 你是 AIGC-Yunzai，一个智能聊天机器人助手。
+
+# MCP 工具服务器
+mcp:
+  servers: []
+  #   - name: my-tools
+  #     url: http://localhost:3000/mcp
+
+# 会话配置
+conversation:
+  max_history: 30 # 记忆长度，单位为消息轮数
