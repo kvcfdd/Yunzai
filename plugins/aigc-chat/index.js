@@ -14,6 +14,8 @@ export class AigcFallback extends plugin {
       event: "message",
       priority: 99999,
       rule: [
+        { reg: /^#关闭aigc$/i, fnc: "aigcOff" },
+        { reg: /^#开启aigc$/i, fnc: "aigcOn" },
         { reg: /^#清除记忆$/i, fnc: "clearMemory" },
         { reg: /^#清除对话$/i, fnc: "clearMemory" },
         { reg: /^#知识库添加(.+)$/i, fnc: "kbAdd" },
@@ -23,6 +25,20 @@ export class AigcFallback extends plugin {
         { reg: /^(.+)$/, fnc: "aigcChat", log: false },
       ],
     })
+  }
+
+  /* ---------- 全局开关 ---------- */
+
+  async aigcOff() {
+    if (!this.e.isMaster) return false
+    cfg.aigc.enable = false
+    return this.reply("AIGC已关闭", true)
+  }
+
+  async aigcOn() {
+    if (!this.e.isMaster) return false
+    cfg.aigc.enable = true
+    return this.reply("AIGC已开启", true)
   }
 
   /* ---------- 记忆 / 对话清除 ---------- */
@@ -79,9 +95,41 @@ export class AigcFallback extends plugin {
 
   async aigcChat() {
     if (cfg.aigc?.enable === false) return
+    if (this.e.isPrivate && cfg.aigc?.private_enable === false && !this.e.isMaster) return false
+
+    // QQ 黑名单
+    const blacklist = cfg.aigc?.qq_blacklist
+    if (blacklist?.length) {
+      const uid = String(this.e.user_id)
+      for (const qq of blacklist) {
+        if (String(qq) === uid) return false
+      }
+    }
+
+    if (this.e.isGroup) {
+      if (!this.e.atBot) return false
+
+      // 群白名单，仅允许白名单群触发
+      const whitelist = cfg.aigc?.group_whitelist
+      if (whitelist?.length) {
+        const gid = String(this.e.group_id)
+        let matched = false
+        for (const g of whitelist) {
+          if (String(g) === gid) { matched = true; break }
+        }
+        if (!matched) return false
+      }
+    }
 
     const userMsg = this.e.msg.trim()
     if (!userMsg) return
+
+    const prefixFilter = cfg.aigc?.prefix_filter
+    if (prefixFilter?.length) {
+      for (const prefix of prefixFilter) {
+        if (userMsg.startsWith(prefix)) return false
+      }
+    }
 
     const key = con().sessionKey(
       this.e.self_id,

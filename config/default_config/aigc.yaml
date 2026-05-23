@@ -1,5 +1,5 @@
 # AIGC 开关
-enable: true
+enable: false
 
 # AIGC Provider: openai | gemini
 provider: openai
@@ -28,6 +28,21 @@ mcp:
   servers: []
   #   - name: my-tools
   #     url: http://localhost:3000/mcp
+
+# 私聊开关
+private_enable: true
+
+# 群白名单
+group_whitelist:
+#  - 123456789
+
+# QQ 黑名单
+qq_blacklist:
+#  - 987654321
+
+# 前缀过滤
+prefix_filter:
+  - "[自动回复]"
 
 # 群聊记录携带条数，0 则不携带
 group_history_count: 30
