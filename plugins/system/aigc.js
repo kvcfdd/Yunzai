@@ -177,6 +177,11 @@ export class AigcFallback extends plugin {
       }
     }
 
+    // 单一用户并发锁：同一用户上一轮未结束时拒绝新请求，5 分钟自动过期
+    const lockKey = `aigc:lock:${this.e.user_id}`
+    if (await redis.get(lockKey)) return false
+    await redis.set(lockKey, "1", { EX: 300 })
+
     const key = con().sessionKey(
       this.e.self_id,
       this.e.user_id,
@@ -199,6 +204,8 @@ export class AigcFallback extends plugin {
     } catch (err) {
       logger.error(`[aigc] ${err.message}`)
       await this.reply("AIGC 服务暂时不可用，请稍后重试", true)
+    } finally {
+      await redis.del(lockKey)
     }
   }
 
