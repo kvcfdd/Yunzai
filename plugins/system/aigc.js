@@ -34,8 +34,8 @@ export class AigcFallback extends plugin {
       rule: [
         { reg: /^#关闭aigc$/i, fnc: "aigcOff" },
         { reg: /^#开启aigc$/i, fnc: "aigcOn" },
+        { reg: /^#结束对话$/i, fnc: "clearMemory" },
         { reg: /^#清除记忆$/i, fnc: "clearMemory" },
-        { reg: /^#清除对话$/i, fnc: "clearMemory" },
         { reg: /^#知识库添加(.+)$/i, fnc: "kbAdd" },
         { reg: /^#知识库删除\s*(\S+)$/i, fnc: "kbRemove" },
         { reg: /^#知识库列表$/i, fnc: "kbList" },
@@ -141,6 +141,7 @@ export class AigcFallback extends plugin {
 
   async aigcChat() {
     if (cfg.aigc?.enable === false) return
+    if (this.e._synthetic) return false
     if (this.e.isPrivate && cfg.aigc?.private_enable === false && !this.e.isMaster) return false
 
     const blacklist = cfg.aigc?.qq_blacklist
@@ -203,7 +204,7 @@ export class AigcFallback extends plugin {
 
   async _buildSystem(userMsg) {
     const parts = [
-      cfg.aigc?.system_prompt || "你是 AIGC-Yunzai，一个智能聊天机器人助手。",
+      cfg.aigc?.system_prompt || "You are AIGC-Yunzai, an intelligent chatbot assistant.",
     ]
 
     const memCtx = await Bot.aigc.memory.toContext(this.e.user_id)
@@ -233,20 +234,20 @@ export class AigcFallback extends plugin {
       const role = e.member?.role || "member"
       const sex = e.member?.sex || "unknown"
 
-      let ctx = `当前为群聊环境，群名称：${e.group_name || "未知"}，群号：${e.group_id}，你的群昵称：${botName}，你的QQ：${e.self_id}。当前发言用户：[${card}](qq:${e.user_id},性别:${sex},群身份:${role})。@某人时使用 [@QQ号] 格式；发送QQ表情时使用 [表情名] 格式。`
+      let ctx = `You are in a group chat. Group: "${e.group_name || "Unknown"}" (ID: ${e.group_id}). Your nickname in this group: ${botName}. Your QQ: ${e.self_id}. Current speaker: [${card}](qq:${e.user_id},sex:${sex},role:${role}).`
 
       const histCount = cfg.aigc?.group_history_count ?? 30
       if (histCount > 0) {
         const history = await this._getGroupHistory(histCount)
         if (history) {
-          ctx += `\n最近群聊记录：\n${history}`
+          ctx += `\nRecent group chat history:\n${history}`
         }
       }
 
       return ctx
     }
 
-    return `当前为私聊环境，当前用户昵称：${e.sender?.nickname || "未知"}，QQ：${e.user_id}。`
+    return `You are in a private chat. User: ${e.sender?.nickname || "Unknown"} (QQ: ${e.user_id}).`
   }
 
   /** 获取群聊最近 N 条消息，格式：[昵称](qq:xxx,性别:x,群身份:x): 消息文本 */
@@ -264,7 +265,7 @@ export class AigcFallback extends plugin {
       const lines = []
       for (const msg of msgs) {
         const sender = msg.sender || {}
-        const name = sender.card || sender.nickname || "未知"
+        const name = sender.card || sender.nickname || "Unknown"
         const qq = sender.user_id || "?"
         const sex = sender.sex || "unknown"
         const role = sender.role || "member"
@@ -272,7 +273,7 @@ export class AigcFallback extends plugin {
         const text = this._extractMsgText(msg)
         if (!text) continue
 
-        lines.push(`[${name}](qq:${qq},性别:${sex},群身份:${role}): ${text}`)
+        lines.push(`[${name}](qq:${qq},sex:${sex},role:${role}): ${text}`)
       }
 
       return lines.length ? lines.join("\n") : null

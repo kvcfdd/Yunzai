@@ -21,7 +21,7 @@ gemini:
   temperature: 0.9 # 输出随机程度(0-1，值越大输出越随机)
 
 # 系统提示词
-system_prompt: 你是 AIGC-Yunzai，一个智能聊天机器人助手。
+system_prompt: You are AIGC-Yunzai, an intelligent chatbot assistant.
 
 # MCP 工具服务器
 mcp:

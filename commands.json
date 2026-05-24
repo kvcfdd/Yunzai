@@ -1,0 +1,58 @@
+{
+  "_comment": "AIGC 可调用命令注册表。使 LLM 能发现并调用。",
+  "commands": [
+    {
+      "prefix": [
+        "#",
+        "#星铁",
+        "#绝区零"
+      ],
+      "command": "绑定uid",
+      "params": [
+        {
+          "name": "uid",
+          "desc": "原神/星铁/绝区零对应的游戏UID",
+          "required": true
+        }
+      ],
+      "description": "绑定游戏UID，默认原神"
+    },
+    {
+      "prefix": [
+        "#",
+        "#星铁",
+        "#绝区零"
+      ],
+      "command": "更新面板",
+      "params": [
+        {
+          "name": "uid",
+          "desc": "游戏UID，可选，默认用户当前绑定uid",
+          "required": false
+        }
+      ],
+      "description": "查询角色更新面板数据，默认原神"
+    },
+    {
+      "prefix": [
+        "#",
+        "#星铁",
+        "#绝区零"
+      ],
+      "command": "<角色名>面板",
+      "params": [
+        {
+          "name": "角色名",
+          "desc": "角色名称，如 刻晴、胡桃",
+          "required": true
+        },
+        {
+          "name": "uid",
+          "desc": "游戏UID，可选，默认用户当前绑定uid",
+          "required": false
+        }
+      ],
+      "description": "查询指定角色的面板数据，如 #刻晴面板"
+    }
+  ]
+}
