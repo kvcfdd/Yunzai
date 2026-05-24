@@ -181,17 +181,19 @@ Bot.adapter.push(
       return msgs
     }
 
-    async makeForwardMsg(msg) {
+    async makeForwardMsg(msg, data) {
+      const nickname = data?.bot?.info?.nickname
+      const userId = data?.bot?.info?.user_id
       const msgs = []
       for (const i of msg) {
         const [content, forward] = await this.makeMsg(i.message)
-        if (forward.length) msgs.push(...(await this.makeForwardMsg(forward)))
+        if (forward.length) msgs.push(...(await this.makeForwardMsg(forward, data)))
         if (content.length)
           msgs.push({
             type: "node",
             data: {
-              name: i.nickname || "匿名消息",
-              uin: String(Number(i.user_id) || 80000000),
+              name: i.nickname || nickname || "匿名消息",
+              uin: String(Number(i.user_id) || userId || 80000000),
               content,
               time: i.time,
             },
@@ -209,7 +211,7 @@ Bot.adapter.push(
       )
       return data.bot.sendApi("send_private_forward_msg", {
         user_id: data.user_id,
-        messages: await this.makeForwardMsg(msg),
+        messages: await this.makeForwardMsg(msg, data),
       })
     }
 
@@ -222,7 +224,7 @@ Bot.adapter.push(
       )
       return data.bot.sendApi("send_group_forward_msg", {
         group_id: data.group_id,
-        messages: await this.makeForwardMsg(msg),
+        messages: await this.makeForwardMsg(msg, data),
       })
     }
 

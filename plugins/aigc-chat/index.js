@@ -27,6 +27,11 @@ export class AigcFallback extends plugin {
     })
   }
 
+  reply(msg = "", quote = false, data = {}) {
+    if (this.e && !this.e.isGroup) quote = false
+    return super.reply(msg, quote, data)
+  }
+
   /* ---------- 全局开关 ---------- */
 
   async aigcOff() {
