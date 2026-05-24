@@ -291,7 +291,7 @@ export class AigcFallback extends plugin {
           logger.mark(
             `[aigc] tool-call-with-text  round=${round + 1}  text=${res.content.slice(0, 80)}`,
           )
-          this.reply(res.content, true)
+          await this.reply(res.content, true)
         }
         const names = res.tool_calls
           .map((c) => c.function?.name)
@@ -322,10 +322,11 @@ export class AigcFallback extends plugin {
         for (let i = 0; i < results.length; i++) {
           const r = results[i]
           const callId = res.tool_calls[i]?.id || `call_${i}`
+          const payload = "error" in r ? r.error : r.result
           await con().addMessage(
             sessionKey,
             "tool",
-            JSON.stringify(r.error || r.result),
+            JSON.stringify(payload ?? ""),
             { tool_call_id: callId },
           )
         }
@@ -356,9 +357,9 @@ export class AigcFallback extends plugin {
         return this.reply(res.content, true)
       }
 
-      // 空响应 (非 blocked) → 不存记忆，直接结束
+      // 空响应 (非 blocked) → 不存记忆，提示用户后结束
       logger.warn(`[aigc] empty  round=${round + 1}`)
-      return
+      return this.reply("AIGC 未返回内容，请稍后重试", true)
     }
 
     // 工具调用轮数超限，强制获取文本回复 (不带 tools)
