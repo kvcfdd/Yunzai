@@ -5,14 +5,14 @@ const tools = () => Bot.aigc.tools
 const kb = () => Bot.aigc.knowledge
 const MAX_TOOL_ROUNDS = 5
 
-/** AIGC 回退入口：被 @ 且无命令匹配时触发，支持工具调用、长期记忆、知识库检索 */
+/** AIGC 入口：被 @ 且无命令匹配时触发，支持工具调用、长期记忆、知识库检索 */
 export class AigcFallback extends plugin {
   constructor() {
     super({
-      name: "AIGC回退",
-      dsc: "被 @ 且无命令匹配时自动进入 AIGC 对话",
+      name: "AIGC",
+      dsc: "AIGC 对话",
       event: "message",
-      priority: 99999,
+      priority: 999999999,
       rule: [
         { reg: /^#关闭aigc$/i, fnc: "aigcOff" },
         { reg: /^#开启aigc$/i, fnc: "aigcOn" },
