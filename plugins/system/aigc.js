@@ -1,9 +1,27 @@
 import cfg from "../../lib/config/config.js"
+import runtime from "../../lib/aigc/runtime.js"
+import common from "../../lib/common/common.js"
 
 const con = () => Bot.aigc.conversation
 const tools = () => Bot.aigc.tools
 const kb = () => Bot.aigc.knowledge
 const MAX_TOOL_ROUNDS = 5
+
+const FACE_MAP = {
+  惊讶: 0, 撇嘴: 1, 色: 2, 发呆: 3, 得意: 4, 流泪: 5, 害羞: 6, 闭嘴: 7, 睡: 8,
+  大哭: 9, 尴尬: 10, 发怒: 11, 调皮: 12, 呲牙: 13, 微笑: 14, 难过: 15, 酷: 16,
+  抓狂: 18, 吐: 19, 偷笑: 20, 可爱: 21, 白眼: 22, 傲慢: 23, 饥饿: 24, 困: 25,
+  惊恐: 26, 流汗: 27, 憨笑: 28, 悠闲: 29, 奋斗: 30, 咒骂: 31, 疑问: 32, 嘘: 33,
+  晕: 34, 折磨: 35, 衰: 36, 骷髅: 37, 敲打: 38, 再见: 39, 擦汗: 40, 抠鼻: 41,
+  鼓掌: 42, 糗大了: 43, 坏笑: 44, 左哼哼: 45, 右哼哼: 46, 哈欠: 47, 鄙视: 48,
+  委屈: 49, 快哭了: 50, 阴险: 51, 亲亲: 52, 吓: 53, 可怜: 54, 菜刀: 55, 西瓜: 56,
+  啤酒: 57, 篮球: 58, 乒乓: 59, 咖啡: 60, 饭: 61, 猪头: 62, 玫瑰: 63, 凋谢: 64,
+  示爱: 65, 爱心: 66, 心碎: 67, 蛋糕: 68, 闪电: 69, 炸弹: 70, 刀: 71, 足球: 72,
+  瓢虫: 73, 便便: 74, 月亮: 75, 太阳: 76, 礼物: 77, 拥抱: 78, 强: 79, 弱: 80,
+  握手: 81, 胜利: 82, 抱拳: 83, 勾引: 84, 拳头: 85, 差劲: 86, 爱你: 87, NO: 88,
+  OK: 89, 爱情: 90, 飞吻: 91, 跳跳: 92, 发抖: 93, 怄火: 94, 转圈: 95, 磕头: 96,
+  回头: 97, 跳绳: 98, 挥手: 99, 激动: 100, 街舞: 101, 献吻: 102,
+}
 
 /** AIGC 入口：被 @ 且无命令匹配时触发，支持工具调用、长期记忆、知识库检索 */
 export class AigcFallback extends plugin {
@@ -27,22 +45,45 @@ export class AigcFallback extends plugin {
     })
   }
 
+  /** 将 LLM 回复中的 [表情名] → face segment，[@QQ号] → at segment */
+  _processContent(text) {
+    if (typeof text !== "string" || !text) return text
+
+    const parts = []
+    let last = 0
+    const re = /\[([\p{Script=Han}A-Z]+)\]|\[@(\d+)\]/gu
+    let m
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) parts.push({ type: "text", data: { text: text.slice(last, m.index) } })
+      if (m[1]) {
+        const id = FACE_MAP[m[1]]
+        parts.push(id !== undefined ? { type: "face", id } : { type: "text", data: { text: m[0] } })
+      } else if (m[2]) {
+        parts.push(global.segment.at(m[2]))
+      }
+      last = m.index + m[0].length
+    }
+    if (!parts.length) return text
+    if (last < text.length) parts.push({ type: "text", data: { text: text.slice(last) } })
+    return parts
+  }
+
   reply(msg = "", quote = false, data = {}) {
     if (this.e && !this.e.isGroup) quote = false
-    return super.reply(msg, quote, data)
+    return super.reply(this._processContent(msg), quote, data)
   }
 
   /* ---------- 全局开关 ---------- */
 
   async aigcOff() {
     if (!this.e.isMaster) return false
-    cfg.aigc.enable = false
+    await runtime.setEnable(false)
     return this.reply("AIGC已关闭", true)
   }
 
   async aigcOn() {
     if (!this.e.isMaster) return false
-    cfg.aigc.enable = true
+    await runtime.setEnable(true)
     return this.reply("AIGC已开启", true)
   }
 
@@ -102,7 +143,6 @@ export class AigcFallback extends plugin {
     if (cfg.aigc?.enable === false) return
     if (this.e.isPrivate && cfg.aigc?.private_enable === false && !this.e.isMaster) return false
 
-    // QQ 黑名单
     const blacklist = cfg.aigc?.qq_blacklist
     if (blacklist?.length) {
       const uid = String(this.e.user_id)
@@ -126,7 +166,7 @@ export class AigcFallback extends plugin {
       }
     }
 
-    const userMsg = this.e.msg.trim()
+    const userMsg = this.e.msg?.trim()
     if (!userMsg) return
 
     const prefixFilter = cfg.aigc?.prefix_filter
@@ -193,7 +233,7 @@ export class AigcFallback extends plugin {
       const role = e.member?.role || "member"
       const sex = e.member?.sex || "unknown"
 
-      let ctx = `当前为群聊环境，群名称：${e.group_name || "未知"}，群号：${e.group_id}，你的群昵称：${botName}，你的QQ：${e.self_id}。当前发言用户：[${card}](qq:${e.user_id},性别:${sex},群身份:${role})。`
+      let ctx = `当前为群聊环境，群名称：${e.group_name || "未知"}，群号：${e.group_id}，你的群昵称：${botName}，你的QQ：${e.self_id}。当前发言用户：[${card}](qq:${e.user_id},性别:${sex},群身份:${role})。@某人时使用 [@QQ号] 格式；发送QQ表情时使用 [表情名] 格式。`
 
       const histCount = cfg.aigc?.group_history_count ?? 30
       if (histCount > 0) {
@@ -350,16 +390,22 @@ export class AigcFallback extends plugin {
             : {},
         )
 
+        if (res.reasoning_content && cfg.aigc?.show_thinking) {
+          const thinkingMsg = await common.makeForwardMsg(this.e, [
+            { type: "text", data: { text: res.reasoning_content } },
+          ])
+          await this.reply(thinkingMsg, true)
+        }
+
         const tokens = res.usage?.total_tokens
         logger.mark(
           `[aigc] reply  uid=${this.e.user_id}  rounds=${round + 1}${tokens ? `  tokens=${tokens}` : ""}  len=${res.content.length}`,
         )
         return this.reply(res.content, true)
       }
-
-      // 空响应 (非 blocked) → 不存记忆，提示用户后结束
+      // 空响应 (非 blocked) → 不存记忆
       logger.warn(`[aigc] empty  round=${round + 1}`)
-      return this.reply("AIGC 未返回内容，请稍后重试", true)
+      return
     }
 
     // 工具调用轮数超限，强制获取文本回复 (不带 tools)

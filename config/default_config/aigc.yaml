@@ -29,6 +29,11 @@ mcp:
   #   - name: my-tools
   #     url: http://localhost:3000/mcp
 
+# 本地代理
+proxy:
+  address: "" # 代理地址，如 http://127.0.0.1:7890，为空则不启用
+  enable: true # LLM 请求是否走代理
+
 # 私聊开关
 private_enable: true
 
@@ -46,6 +51,9 @@ prefix_filter:
 
 # 群聊记录携带条数，0 则不携带
 group_history_count: 30
+
+# 是否将思维链以合并转发方式单独发送
+show_thinking: false
 
 # 会话配置
 conversation:
