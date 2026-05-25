@@ -55,6 +55,9 @@ group_history_count: 30
 # 是否将思维链以合并转发方式单独发送
 show_thinking: false
 
+# 是否允许分句回复
+split_reply: false
+
 # 会话配置
 conversation:
   max_history: 30 # 对话历史长度，单位为消息轮数

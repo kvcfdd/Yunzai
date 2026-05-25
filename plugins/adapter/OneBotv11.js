@@ -8,7 +8,7 @@ Bot.adapter.push(
     name = "OneBotv11"
     path = this.name
     echo = new Map()
-    timeout = 60000
+    timeout = 180000
     makeLog(msg) {
       return Bot.String(msg).replace(/base64:\/\/.*?(,|]|")/g, "base64://...$1")
     }
@@ -22,7 +22,6 @@ Bot.adapter.push(
       const timeout = setTimeout(() => {
         cache.reject(Bot.makeError("请求超时", request, { timeout: this.timeout }))
         Bot.makeLog("error", ["请求超时", request], data.self_id)
-        ws.terminate()
       }, this.timeout)
 
       return cache.promise

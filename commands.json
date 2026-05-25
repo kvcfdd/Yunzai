@@ -7,7 +7,7 @@
         "#星铁",
         "#绝区零"
       ],
-      "command": "绑定uid",
+      "command": "绑定",
       "params": [
         {
           "name": "uid",
@@ -15,7 +15,7 @@
           "required": true
         }
       ],
-      "description": "绑定游戏UID，默认原神"
+      "description": "绑定游戏UID，未提及具体游戏则默认原神(#)"
     },
     {
       "prefix": [
@@ -31,7 +31,7 @@
           "required": false
         }
       ],
-      "description": "查询角色更新面板数据，默认原神"
+      "description": "更新角色面板数据，未提及具体游戏则默认原神(#)"
     },
     {
       "prefix": [
@@ -39,12 +39,13 @@
         "#星铁",
         "#绝区零"
       ],
-      "command": "<角色名>面板",
+      "command": "面板",
       "params": [
         {
           "name": "角色名",
-          "desc": "角色名称，如 刻晴、胡桃",
-          "required": true
+          "desc": "角色名称，必填，支持模糊匹配",
+          "required": true,
+          "position": "before"
         },
         {
           "name": "uid",
@@ -52,7 +53,7 @@
           "required": false
         }
       ],
-      "description": "查询指定角色的面板数据，如 #刻晴面板"
+      "description": "查询指定角色的面板数据，未提及具体游戏则默认原神(#)"
     }
   ]
 }

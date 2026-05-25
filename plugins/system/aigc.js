@@ -1,6 +1,7 @@
 import cfg from "../../lib/config/config.js"
 import runtime from "../../lib/aigc/runtime.js"
 import common from "../../lib/common/common.js"
+import { formatDate } from "../../lib/aigc/time.js"
 
 const con = () => Bot.aigc.conversation
 const tools = () => Bot.aigc.tools
@@ -68,6 +69,18 @@ export class AigcFallback extends plugin {
     return parts
   }
 
+  /** 分段回复：按 <x><x><x> 拆分 */
+  async _splitReply(text) {
+    const parts = text.split(/<x><x><x>/)
+    if (parts.length <= 1) return this.reply(text, true)
+    for (let i = 0; i < parts.length; i++) {
+      const t = parts[i].trim()
+      if (!t) continue
+      await this.reply(t, i === 0)
+      if (i < parts.length - 1) await new Promise(r => setTimeout(r, 1000))
+    }
+  }
+
   reply(msg = "", quote = false, data = {}) {
     if (this.e && !this.e.isGroup) quote = false
     return super.reply(this._processContent(msg), quote, data)
@@ -97,7 +110,7 @@ export class AigcFallback extends plugin {
     )
     await Bot.aigc.memory.clear(this.e.user_id)
     await con().clearSession(key)
-    logger.info(`[aigc] clear  uid=${this.e.user_id}`)
+    logger.info(`清空会话`)
     return this.reply("AIGC记忆已清除", true)
   }
 
@@ -191,9 +204,7 @@ export class AigcFallback extends plugin {
     const model = cfg.aigc?.[provider]?.model || "gpt-4o-mini"
     const gid = this.e.isGroup ? this.e.group_id : "-"
 
-    logger.info(
-      `[aigc] req  uid=${this.e.user_id}  gid=${gid}  model=${model}  len=${userMsg.length}`,
-    )
+    logger.info(`chat  uid=${this.e.user_id}`)
 
     await con().setSystem(key, await this._buildSystem(userMsg))
 
@@ -202,7 +213,7 @@ export class AigcFallback extends plugin {
     try {
       await this._replyLoop(key, userMsg, images)
     } catch (err) {
-      logger.error(`[aigc] ${err.message}`)
+      logger.error(`对话异常: ${err.message}`)
       await this.reply("AIGC 服务暂时不可用，请稍后重试", true)
     } finally {
       await redis.del(lockKey)
@@ -210,8 +221,11 @@ export class AigcFallback extends plugin {
   }
 
   async _buildSystem(userMsg) {
+    const systemPrompt = (cfg.aigc?.system_prompt || "You are AIGC-Yunzai, an intelligent chatbot assistant.")
+      + (cfg.aigc?.split_reply ? `如果你想要分句回复，可以使用 <x><x><x> 分割文本，例如：第一句<x><x><x>第二句<x><x><x>第三句 ，系统会帮你拆开发送。` : "")
+    const timeStr = formatDate(new Date(), "full")
     const parts = [
-      cfg.aigc?.system_prompt || "You are AIGC-Yunzai, an intelligent chatbot assistant.",
+      `${systemPrompt}现在是：${timeStr}。`,
     ]
 
     const memCtx = await Bot.aigc.memory.toContext(this.e.user_id)
@@ -285,7 +299,7 @@ export class AigcFallback extends plugin {
 
       return lines.length ? lines.join("\n") : null
     } catch (err) {
-      logger.warn(`[aigc] failed to get group history: ${err.message}`)
+      logger.warn(`群聊记录获取失败: ${err.message}`)
       return null
     }
   }
@@ -328,24 +342,19 @@ export class AigcFallback extends plugin {
 
       // Gemini 安全拦截 → 不存记忆，直接结束
       if (res.blocked) {
-        logger.warn(
-          `[aigc] blocked  uid=${this.e.user_id}  finishReason=${res.finishReason}`,
-        )
+        logger.warn(`安全拦截  ${res.finishReason}`)
         return this.reply("内容被安全策略拦截", true)
       }
 
       if (res.tool_calls?.length) {
         if (res.content) {
-          logger.mark(
-            `[aigc] tool-call-with-text  round=${round + 1}  text=${res.content.slice(0, 80)}`,
-          )
-          await this.reply(res.content, true)
+          await this._splitReply(res.content)
         }
         const names = res.tool_calls
           .map((c) => c.function?.name)
           .filter(Boolean)
           .join(",")
-        logger.mark(`[aigc] tool-call  round=${round + 1}  tools=${names}`)
+        logger.info(`工具调用: ${names}`)
 
         if (!userSaved) {
           await con().addMessage(
@@ -405,19 +414,15 @@ export class AigcFallback extends plugin {
           await this.reply(thinkingMsg, true)
         }
 
-        const tokens = res.usage?.total_tokens
-        logger.mark(
-          `[aigc] reply  uid=${this.e.user_id}  rounds=${round + 1}${tokens ? `  tokens=${tokens}` : ""}  len=${res.content.length}`,
-        )
-        return this.reply(res.content, true)
+        return this._splitReply(res.content)
       }
       // 空响应 (非 blocked) → 不存记忆
-      logger.warn(`[aigc] empty  round=${round + 1}`)
+      logger.warn(`空响应`)
       return
     }
 
     // 工具调用轮数超限，强制获取文本回复 (不带 tools)
-    logger.warn(`[aigc] max-rounds  uid=${this.e.user_id}  forcing text reply`)
+    logger.warn(`超限`)
     const finalReply = await Bot.aigc.provider.chat(
       await con().getMessages(sessionKey),
     )
@@ -430,13 +435,11 @@ export class AigcFallback extends plugin {
           ? { reasoning_content: finalReply.reasoning_content }
           : {},
       )
-      logger.mark(
-        `[aigc] reply  uid=${this.e.user_id}  final=1  len=${finalReply.content.length}`,
-      )
-      return this.reply(finalReply.content, true)
+      logger.info(`超限回复`)
+      return this._splitReply(finalReply.content)
     }
 
-    logger.error(`[aigc] all-rounds-failed  uid=${this.e.user_id}`)
+    logger.error(`全部失败`)
     return this.reply("处理超时，请稍后再试", true)
   }
 }
