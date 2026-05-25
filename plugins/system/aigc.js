@@ -225,7 +225,7 @@ export class AigcFallback extends plugin {
       + (cfg.aigc?.split_reply ? `如果你想要分句回复，可以使用 <x><x><x> 分割文本，例如：第一句<x><x><x>第二句<x><x><x>第三句 ，系统会帮你拆开发送。` : "")
     const timeStr = formatDate(new Date(), "full")
     const parts = [
-      `${systemPrompt}现在是：${timeStr}。`,
+      `${systemPrompt}现在是${timeStr}。`,
     ]
 
     const memCtx = await Bot.aigc.memory.toContext(this.e.user_id)
