@@ -77,7 +77,7 @@ export class AigcFallback extends plugin {
       const t = parts[i].trim()
       if (!t) continue
       await this.reply(t, i === 0)
-      if (i < parts.length - 1) await new Promise(r => setTimeout(r, 1000))
+      if (i < parts.length - 1) await new Promise(r => setTimeout(r, Math.random() * 1000 + 1000))
     }
   }
 
@@ -222,7 +222,8 @@ export class AigcFallback extends plugin {
 
   async _buildSystem(userMsg) {
     const systemPrompt = (cfg.aigc?.system_prompt || "You are AIGC-Yunzai, an intelligent chatbot assistant.")
-      + (cfg.aigc?.split_reply ? `如果你想要分句回复，可以使用 <x><x><x> 分割文本，例如：第一句<x><x><x>第二句<x><x><x>第三句 ，系统会帮你拆开发送。` : "")
+      + (cfg.aigc?.split_reply ? `如果你想要一次回复多条消息，可以使用 <x><x><x> 分割文本，例如：第一条消息内容<x><x><x>第二条消息内容<x><x><x>第三条消息内容，系统就会帮你分为3条消息依次发送。` : "")
+    
     const timeStr = formatDate(new Date(), "full")
     const parts = [
       `${systemPrompt}现在是${timeStr}。`,
