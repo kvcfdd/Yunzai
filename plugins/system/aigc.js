@@ -6,7 +6,7 @@ import { formatDate } from "../../lib/aigc/helpers/time.js"
 const con = () => Bot.aigc.conversation
 const tools = () => Bot.aigc.tools
 const kb = () => Bot.aigc.knowledge
-const MAX_TOOL_ROUNDS = 8
+const MAX_TOOL_ROUNDS = 5
 
 // QQ 表情名 → 表情 ID 映射
 const FACE_MAP = {
@@ -240,7 +240,8 @@ export class AigcFallback extends plugin {
       "- To fetch web content: search(type='web') first, then browse for detailed content.",
       "- render is for text layout (tables, code, reports) — NOT for photos or AI-generated art.",
       "- interact handles poke (戳一戳) and like (点赞) in both private and group chats.",
-      "- group_admin / block / remember / forget are administrative. Only use when the user explicitly requests these actions.",
+      "- group_admin handles kick, ban, mute, set_admin, quit and other group management. These are DESTRUCTIVE — only invoke when the user explicitly and unambiguously requests a specific action, and the user must be the group owner or admin. If unsure, ask for confirmation before acting.",
+      "- block / remember / forget are administrative. Only use when the user explicitly requests these actions.",
       "- Prefer 1-2 tool calls per response. If a tool fails, explain the failure in text rather than retrying repeatedly.",
     ].join("\n")
     const parts = [
