@@ -1,13 +1,14 @@
 import cfg from "../../lib/config/config.js"
 import runtime from "../../lib/aigc/runtime.js"
 import common from "../../lib/common/common.js"
-import { formatDate } from "../../lib/aigc/time.js"
+import { formatDate } from "../../lib/aigc/helpers/time.js"
 
 const con = () => Bot.aigc.conversation
 const tools = () => Bot.aigc.tools
 const kb = () => Bot.aigc.knowledge
-const MAX_TOOL_ROUNDS = 5
+const MAX_TOOL_ROUNDS = 8
 
+// QQ 表情名 → 表情 ID 映射
 const FACE_MAP = {
   惊讶: 0, 撇嘴: 1, 色: 2, 发呆: 3, 得意: 4, 流泪: 5, 害羞: 6, 闭嘴: 7, 睡: 8,
   大哭: 9, 尴尬: 10, 发怒: 11, 调皮: 12, 呲牙: 13, 微笑: 14, 难过: 15, 酷: 16,
@@ -37,6 +38,7 @@ export class AigcFallback extends plugin {
         { reg: /^#开启aigc$/i, fnc: "aigcOn" },
         { reg: /^#结束对话$/i, fnc: "clearMemory" },
         { reg: /^#清除记忆$/i, fnc: "clearMemory" },
+        { reg: /^#结束全部对话$/i, fnc: "clearAllMemory", permission: "master" },
         { reg: /^#知识库添加(.+)$/i, fnc: "kbAdd" },
         { reg: /^#知识库删除\s*(\S+)$/i, fnc: "kbRemove" },
         { reg: /^#知识库列表$/i, fnc: "kbList" },
@@ -46,7 +48,7 @@ export class AigcFallback extends plugin {
     })
   }
 
-  /** 将 LLM 回复中的 [表情名] → face segment，[@QQ号] → at segment */
+  /** 将 LLM 回复中的 [表情名] → QQ 表情，[@QQ号] → at 消息段 */
   _processContent(text) {
     if (typeof text !== "string" || !text) return text
 
@@ -69,7 +71,7 @@ export class AigcFallback extends plugin {
     return parts
   }
 
-  /** 分段回复：按 <x><x><x> 拆分 */
+  /** 按 <x><x><x> 分隔符拆分为多条消息依次发送 */
   async _splitReply(text) {
     const parts = text.split(/<x><x><x>/)
     if (parts.length <= 1) return this.reply(text, true)
@@ -86,7 +88,7 @@ export class AigcFallback extends plugin {
     return super.reply(this._processContent(msg), quote, data)
   }
 
-  /* ---------- 全局开关 ---------- */
+  // 全局开关
 
   async aigcOff() {
     if (!this.e.isMaster) return false
@@ -100,7 +102,7 @@ export class AigcFallback extends plugin {
     return this.reply("AIGC已开启", true)
   }
 
-  /* ---------- 记忆 / 对话清除 ---------- */
+  // 记忆 / 对话清除
 
   async clearMemory() {
     const key = con().sessionKey(
@@ -108,19 +110,35 @@ export class AigcFallback extends plugin {
       this.e.user_id,
       this.e.isGroup ? this.e.group_id : "",
     )
+    const mems = await Bot.aigc.memory.getAll(this.e.user_id)
+    const msgs = await con().getMessages(key)
+    const hasMem = Object.keys(mems).length > 0
+    const hasConv = msgs.length > 0
+
     await Bot.aigc.memory.clear(this.e.user_id)
     await con().clearSession(key)
-    logger.info(`清空会话`)
-    return this.reply("AIGC记忆已清除", true)
+
+    if (hasMem || hasConv) {
+      logger.info(`用户 ${this.e.user_id} 清除了会话`)
+      return this.reply("AIGC记忆已清除", true)
+    }
+    return this.reply("暂无记忆缓存", true)
   }
 
-  /* ---------- 知识库管理 ---------- */
+  async clearAllMemory() {
+    if (!this.e.isMaster) return false
+    await Bot.aigc.memory.clearAll()
+    await con().clearAll()
+    logger.info("管理员清除了全部用户的记忆和会话")
+    return this.reply("已清除全部用户的记忆与对话缓存", true)
+  }
+
+  // 知识库管理
 
   async kbAdd() {
     if (!this.e.isMaster) return false
     const content = this.e.msg.replace(/^#知识库添加/i, "").trim()
-    if (!content)
-      return this.reply("请输入要添加的内容，格式：#知识库添加 <内容>", true)
+    if (!content) return this.reply("请输入要添加的内容，格式：#知识库添加 <内容>", true)
     const r = await kb().add(content)
     if (r.error) return this.reply(`添加失败：${r.error}`, true)
     return this.reply(`已添加知识 [${r.id}]：${r.content}`, true)
@@ -129,8 +147,7 @@ export class AigcFallback extends plugin {
   async kbRemove() {
     if (!this.e.isMaster) return false
     const id = this.e.msg.replace(/^#知识库删除\s*/i, "").trim()
-    if (!id)
-      return this.reply("请输入要删除的知识 ID，格式：#知识库删除 <id>", true)
+    if (!id) return this.reply("请输入要删除的知识 ID，格式：#知识库删除 <id>", true)
     const r = await kb().remove(id)
     if (r.error) return this.reply(`删除失败：${r.error}`, true)
     return this.reply(`已删除知识 [${r.id}]`, true)
@@ -150,13 +167,14 @@ export class AigcFallback extends plugin {
     return this.reply("已清除全部知识库内容", true)
   }
 
-  /* ---------- AIGC 对话 ---------- */
+  // AIGC 对话主流程
 
   async aigcChat() {
     if (cfg.aigc?.enable === false) return
     if (this.e._synthetic) return false
     if (this.e.isPrivate && cfg.aigc?.private_enable === false && !this.e.isMaster) return false
 
+    // 黑名单检查
     const blacklist = cfg.aigc?.qq_blacklist
     if (blacklist?.length) {
       const uid = String(this.e.user_id)
@@ -168,31 +186,23 @@ export class AigcFallback extends plugin {
     if (this.e.isGroup) {
       if (!this.e.atBot) return false
 
-      // 群白名单，仅允许白名单群触发
       const whitelist = cfg.aigc?.group_whitelist
       if (whitelist?.length) {
         const gid = String(this.e.group_id)
-        let matched = false
-        for (const g of whitelist) {
-          if (String(g) === gid) { matched = true; break }
-        }
-        if (!matched) return false
+        if (!whitelist.some(g => String(g) === gid)) return false
       }
     }
 
     const userMsg = this.e.msg?.trim()
     if (!userMsg) return
 
+    // 前缀过滤（如 "[自动回复]"）
     const prefixFilter = cfg.aigc?.prefix_filter
-    if (prefixFilter?.length) {
-      for (const prefix of prefixFilter) {
-        if (userMsg.startsWith(prefix)) return false
-      }
-    }
+    if (prefixFilter?.length && prefixFilter.some(p => userMsg.startsWith(p))) return
 
-    // 单一用户并发锁：同一用户上一轮未结束时拒绝新请求，5 分钟自动过期
+    // 并发锁：同一用户上一轮未结束时拒绝新请求，5 分钟自动过期
     const lockKey = `aigc:lock:${this.e.user_id}`
-    if (await redis.get(lockKey)) return false
+    if (await redis.get(lockKey)) return
     await redis.set(lockKey, "1", { EX: 300 })
 
     const key = con().sessionKey(
@@ -200,11 +210,8 @@ export class AigcFallback extends plugin {
       this.e.user_id,
       this.e.isGroup ? this.e.group_id : "",
     )
-    const provider = cfg.aigc?.provider || "openai"
-    const model = cfg.aigc?.[provider]?.model || "gpt-4o-mini"
-    const gid = this.e.isGroup ? this.e.group_id : "-"
 
-    logger.info(`chat  uid=${this.e.user_id}`)
+    logger.info(`用户 ${this.e.user_id} 发起对话`)
 
     await con().setSystem(key, await this._buildSystem(userMsg))
 
@@ -220,13 +227,24 @@ export class AigcFallback extends plugin {
     }
   }
 
+  /** 构建 system prompt：基础提示词 + 时间 + 工具规则 + 记忆 + 知识库 + 环境上下文 */
   async _buildSystem(userMsg) {
     const systemPrompt = (cfg.aigc?.system_prompt || "You are AIGC-Yunzai, an intelligent chatbot assistant.")
       + (cfg.aigc?.split_reply ? `如果你想要一次回复多条消息，可以使用 <x><x><x> 分割文本，例如：第一条消息内容<x><x><x>第二条消息内容<x><x><x>第三条消息内容，系统就会帮你分为3条消息依次发送。` : "")
-    
+
     const timeStr = formatDate(new Date(), "full")
+    const toolRules = [
+      "## Tool usage rules",
+      "- To send images: ALWAYS call search(type='image') first, then send_image with the returned URL and Referer. NEVER make up image URLs.",
+      "- To send music/video: search(type='music'|'video') first, then send_media with the returned ID.",
+      "- To fetch web content: search(type='web') first, then browse for detailed content.",
+      "- render is for text layout (tables, code, reports) — NOT for photos or AI-generated art.",
+      "- interact handles poke (戳一戳) and like (点赞) in both private and group chats.",
+      "- group_admin / block / remember / forget are administrative. Only use when the user explicitly requests these actions.",
+      "- Prefer 1-2 tool calls per response. If a tool fails, explain the failure in text rather than retrying repeatedly.",
+    ].join("\n")
     const parts = [
-      `${systemPrompt}现在是${timeStr}。`,
+      `${systemPrompt}现在是${timeStr}，注意回复内容的时效性。\n${toolRules}`,
     ]
 
     const memCtx = await Bot.aigc.memory.toContext(this.e.user_id)
@@ -241,15 +259,13 @@ export class AigcFallback extends plugin {
     return parts.join("\n")
   }
 
-  /** 构建当前聊天环境上下文：私聊/群聊、用户/群信息、最近群聊记录 */
+  /** 构建聊天环境上下文：私聊/群聊信息、群内最近消息 */
   async _buildEnvContext() {
     const e = this.e
 
     if (e.isGroup) {
       let botCard = ""
-      try {
-        botCard = e.group?.pickMember?.(e.self_id)?.card || ""
-      } catch { }
+      try { botCard = e.group?.pickMember?.(e.self_id)?.card || "" } catch { }
       const botName = botCard || Bot[e.self_id]?.nickname || ""
 
       const card = e.sender?.card || e.sender?.nickname || ""
@@ -261,9 +277,7 @@ export class AigcFallback extends plugin {
       const histCount = cfg.aigc?.group_history_count ?? 30
       if (histCount > 0) {
         const history = await this._getGroupHistory(histCount)
-        if (history) {
-          ctx += `\nRecent group chat history:\n${history}`
-        }
+        if (history) ctx += `\nRecent group chat history:\n${history}`
       }
 
       return ctx
@@ -272,7 +286,7 @@ export class AigcFallback extends plugin {
     return `You are in a private chat. User: ${e.sender?.nickname || "Unknown"} (QQ: ${e.user_id}).`
   }
 
-  /** 获取群聊最近 N 条消息，格式：[昵称](qq:xxx,性别:x,群身份:x): 消息文本 */
+  /** 获取群聊最近 N 条消息 */
   async _getGroupHistory(count) {
     try {
       const e = this.e
@@ -305,22 +319,21 @@ export class AigcFallback extends plugin {
     }
   }
 
-  /** 从解析后的消息中提取纯文本，去除 CQ 码 */
+  /** 从消息中提取纯文本，去除 CQ 码 */
   _extractMsgText(msg) {
     const message = msg.message
     if (!message) {
-      const raw = msg.raw_message || ""
-      return raw.replace(/\[CQ:[^\]]+\]/g, "").trim()
+      return (msg.raw_message || "").replace(/\[CQ:[^\]]+\]/g, "").trim()
     }
     if (typeof message === "string") return message
     if (!Array.isArray(message)) return ""
     return message
-      .filter((seg) => seg.type === "text")
-      .map((seg) => seg.text || "")
+      .filter(seg => seg.type === "text")
+      .map(seg => seg.text || "")
       .join("")
   }
 
-  /** 工具调用循环：LLM → tool_calls → 执行 → 回传结果，直到文本回复或超限 */
+  /** 工具调用循环：LLM 回复 → tool_calls 则执行并回传 → 文本则发送并退出 */
   async _replyLoop(sessionKey, userMsg, images) {
     let userSaved = false
 
@@ -341,36 +354,24 @@ export class AigcFallback extends plugin {
 
       const res = await Bot.aigc.provider.chat(messages, opts)
 
-      // Gemini 安全拦截 → 不存记忆，直接结束
       if (res.blocked) {
         logger.warn(`安全拦截  ${res.finishReason}`)
         return this.reply("内容被安全策略拦截", true)
       }
 
       if (res.tool_calls?.length) {
-        if (res.content) {
-          await this._splitReply(res.content)
-        }
-        const names = res.tool_calls
-          .map((c) => c.function?.name)
-          .filter(Boolean)
-          .join(",")
-        logger.info(`工具调用: ${names}`)
+        if (res.content) await this._splitReply(res.content)
+
+        const names = res.tool_calls.map(c => c.function?.name).filter(Boolean).join(",")
+        logger.info(`调用工具: ${names}`)
 
         if (!userSaved) {
-          await con().addMessage(
-            sessionKey,
-            "user",
-            userMsg,
-            images ? { images } : {},
-          )
+          await con().addMessage(sessionKey, "user", userMsg, images ? { images } : {})
           userSaved = true
         }
         await con().addMessage(sessionKey, "assistant", res.content || null, {
           tool_calls: res.tool_calls,
-          ...(res.reasoning_content && {
-            reasoning_content: res.reasoning_content,
-          }),
+          ...(res.reasoning_content && { reasoning_content: res.reasoning_content }),
         })
 
         const results = await tools().executeAll(res.tool_calls, {
@@ -381,32 +382,17 @@ export class AigcFallback extends plugin {
           const r = results[i]
           const callId = res.tool_calls[i]?.id || `call_${i}`
           const payload = "error" in r ? r.error : r.result
-          await con().addMessage(
-            sessionKey,
-            "tool",
-            JSON.stringify(payload ?? ""),
-            { tool_call_id: callId },
-          )
+          await con().addMessage(sessionKey, "tool", JSON.stringify(payload ?? ""), { tool_call_id: callId })
         }
         continue
       }
 
       if (res.content) {
-        if (!userSaved)
-          await con().addMessage(
-            sessionKey,
-            "user",
-            userMsg,
-            images ? { images } : {},
-          )
-        await con().addMessage(
-          sessionKey,
-          "assistant",
-          res.content,
-          res.reasoning_content
-            ? { reasoning_content: res.reasoning_content }
-            : {},
-        )
+        if (!userSaved) {
+          await con().addMessage(sessionKey, "user", userMsg, images ? { images } : {})
+          userSaved = true
+        }
+        await con().addMessage(sessionKey, "assistant", res.content, res.reasoning_content ? { reasoning_content: res.reasoning_content } : {})
 
         if (res.reasoning_content && cfg.aigc?.show_thinking) {
           const thinkingMsg = await common.makeForwardMsg(this.e, [
@@ -417,30 +403,21 @@ export class AigcFallback extends plugin {
 
         return this._splitReply(res.content)
       }
-      // 空响应 (非 blocked) → 不存记忆
+
       logger.warn(`空响应`)
       return
     }
 
-    // 工具调用轮数超限，强制获取文本回复 (不带 tools)
+    // 轮次超限，最后一次不带 tools 尝试
     logger.warn(`超限`)
-    const finalReply = await Bot.aigc.provider.chat(
-      await con().getMessages(sessionKey),
-    )
+    const finalReply = await Bot.aigc.provider.chat(await con().getMessages(sessionKey))
     if (finalReply.content) {
-      await con().addMessage(
-        sessionKey,
-        "assistant",
-        finalReply.content,
-        finalReply.reasoning_content
-          ? { reasoning_content: finalReply.reasoning_content }
-          : {},
-      )
-      logger.info(`超限回复`)
+      await con().addMessage(sessionKey, "assistant", finalReply.content, finalReply.reasoning_content ? { reasoning_content: finalReply.reasoning_content } : {})
+      logger.warn(`工具轮次超限，降级回复成功`)
       return this._splitReply(finalReply.content)
     }
 
     logger.error(`全部失败`)
-    return this.reply("处理超时，请稍后再试", true)
+    return this.reply("工具调用轮次超限，请简化你的请求后重试", true)
   }
 }

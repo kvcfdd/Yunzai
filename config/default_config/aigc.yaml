@@ -23,11 +23,22 @@ gemini:
 # 系统提示词
 system_prompt: You are AIGC-Yunzai, an intelligent chatbot assistant.
 
-# MCP 工具服务器
+# MCP 工具服务器 (支持 Streamable HTTP 和 stdio)
 mcp:
   servers: []
-  #   - name: my-tools
+  # Streamable HTTP 传输:
+  #   - name: my-http-tools
+  #     transport: http
   #     url: http://localhost:3000/mcp
+  #     api_key: ""
+  #     timeout_ms: 30000
+  # stdio 传输:
+  #   - name: my-local-tools
+  #     transport: stdio
+  #     command: npx
+  #     args: ["-y", "@anthropic/mcp-server-filesystem", "/allowed/dir"]
+  #     env: {}
+  #     timeout_ms: 30000
 
 # 本地代理
 proxy:
@@ -54,6 +65,9 @@ group_history_count: 30
 
 # 是否将思维链以合并转发方式单独发送
 show_thinking: false
+
+# 思考模式：启用后模型会在回复前进行内部推理（只控制OpenAI兼容模式且需模型支持）
+thinking: false
 
 # 是否允许分句回复
 split_reply: false
