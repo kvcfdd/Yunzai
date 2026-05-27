@@ -72,6 +72,9 @@ thinking: false
 # 是否允许分句回复
 split_reply: false
 
+# B站 Cookie（用于视频搜索和下载，不填则使用匿名会话）
+bilibili_cookie: ""
+
 # 会话配置
 conversation:
   max_history: 30 # 对话历史长度，单位为消息轮数
