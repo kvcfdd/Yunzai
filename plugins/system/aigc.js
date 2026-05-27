@@ -170,7 +170,7 @@ export class AigcFallback extends plugin {
   // AIGC 对话主流程
 
   async aigcChat() {
-    if (cfg.aigc?.enable === false) return
+    if (cfg.aigc?.enable === false) return false
     if (this.e._synthetic) return false
     if (this.e.isPrivate && cfg.aigc?.private_enable === false && !this.e.isMaster) return false
 
@@ -194,15 +194,15 @@ export class AigcFallback extends plugin {
     }
 
     const userMsg = this.e.msg?.trim()
-    if (!userMsg) return
+    if (!userMsg) return false
 
     // 前缀过滤（如 "[自动回复]"）
     const prefixFilter = cfg.aigc?.prefix_filter
-    if (prefixFilter?.length && prefixFilter.some(p => userMsg.startsWith(p))) return
+    if (prefixFilter?.length && prefixFilter.some(p => userMsg.startsWith(p))) return false
 
     // 并发锁：同一用户上一轮未结束时拒绝新请求，5 分钟自动过期
     const lockKey = `aigc:lock:${this.e.user_id}`
-    if (await redis.get(lockKey)) return
+    if (await redis.get(lockKey)) return false
     await redis.set(lockKey, "1", { EX: 300 })
 
     const key = con().sessionKey(
