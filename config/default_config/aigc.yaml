@@ -20,9 +20,9 @@ gemini:
 max_tokens: 2048
 # 输出随机程度 (0-1，值越大输出越随机)
 temperature: 0.9
-# 机器人名称（会拼接至提示词开头和日志中）
+# 机器人名称(会拼接至提示词开头和日志中)
 bot_name: AIGC Bot
-# 系统提示词
+# 系统提示词 (你的名字叫 bot_name，system_prompt)
 system_prompt: You are an intelligent chatbot assistant.
 
 # MCP 工具服务器 (支持 Streamable HTTP 和 stdio)

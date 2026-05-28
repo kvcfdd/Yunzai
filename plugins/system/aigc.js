@@ -48,7 +48,7 @@ export class AigcFallback extends plugin {
         if (m[1]) parts.push({ type: "text", data: { text: m[1] } })
         const target = m[2]
         if (/^\d+$/.test(target)) {
-          parts.push(global.segment.at(target))
+          parts.push(segment.at(target))
         } else {
           let qq = null
           try {
@@ -59,7 +59,7 @@ export class AigcFallback extends plugin {
               }
             }
           } catch {}
-          qq ? parts.push(global.segment.at(qq)) : parts.push({ type: "text", data: { text: m[0] } })
+          qq ? parts.push(segment.at(qq)) : parts.push({ type: "text", data: { text: m[0] } })
         }
       } else if (m[3]) {
         const id = faceId(m[3])
@@ -275,8 +275,8 @@ export class AigcFallback extends plugin {
       "- When you want real-time info or research, search the web then browse for details.",
       "- When you want to send images, search(type='image') first, then send_image with the results.",
       "- When you want to share music or video, search(type='music'|'video') first, then send_media with the ID.",
-      "- When your reply contains tables, code, or complex formatting, use render to screenshot it.",
-      "- When you want to be friendly or liven up the mood, use interact to like or poke.",
+      "- When your reply contains tables, code, or complex formatting, use render(format='image') to screenshot it. Use render(format='video') for animations, canvas, or video content.",
+      "- When you want to be friendly or liven up the mood, use interact to like, poke, or send a sticker.",
       "- For group management (kick, ban, set_admin, etc.), use group_admin. If a user asks you to perform an action on someone else, verify that the requesting user has the permission (owner/admin) to do so. If you initiate the action yourself, confirm you have bot permission in the group first.",
       "- Use recall_memory to check what you already know about a user. When they share something worth remembering, use remember. When a memory is wrong or outdated, use forget.",
       "- When you don't want to continue chatting with a user, use block to blacklist them.",
@@ -309,8 +309,8 @@ export class AigcFallback extends plugin {
       const botName = botCard || Bot[e.self_id]?.nickname || ""
 
       const card = e.sender?.card || e.sender?.nickname || ""
-      const role = e.member?.role || "member"
-      const sex = e.member?.sex || "unknown"
+      const role = { owner: "群主", admin: "群管理员", member: "群成员" }[e.member?.role] || e.member?.role || "群成员"
+      const sex = { male: "男", female: "女", unknown: "未知" }[e.member?.sex] || e.member?.sex || "未知"
 
       let ctx = `You are in a group chat. Group: "${e.group_name || "Unknown"}" (ID: ${e.group_id}). Your nickname in this group: ${botName}. Your QQ: ${e.self_id}. Current speaker: [${card}](qq:${e.user_id},sex:${sex},role:${role}).`
 
@@ -343,13 +343,20 @@ export class AigcFallback extends plugin {
         const sender = msg.sender || {}
         const name = sender.card || sender.nickname || "Unknown"
         const qq = sender.user_id || "?"
-        const sex = sender.sex || "unknown"
-        const role = sender.role || "member"
+        const sex = { male: "男", female: "女", unknown: "未知" }[sender.sex] || sender.sex || "未知"
+        const role = { owner: "群主", admin: "群管理员", member: "群成员" }[sender.role] || sender.role || "群成员"
+        let time = ""
+        if (msg.time) {
+          const d = new Date(msg.time * 1000)
+          time = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+        }
 
         const text = this._extractMsgText(msg)
         if (!text) continue
 
-        lines.push(`[${name}](qq:${qq},sex:${sex},role:${role}): ${text}`)
+        const meta = [`qq:${qq}`, `sex:${sex}`, `role:${role}`]
+        if (time) meta.push(`time:${time}`)
+        lines.push(`[${name}](${meta.join(",")}): ${text}`)
       }
 
       return lines.length ? lines.join("\n") : null
@@ -423,10 +430,11 @@ export class AigcFallback extends plugin {
         log.info(`调用工具: ${names}`)
 
         if (!userSaved) {
-          await con().addMessage(sessionKey, "user", userMsg, images ? { images } : {})
+          await con().addMessage(sessionKey, "user", userMsg, { time: Date.now(), ...(images ? { images } : {}) })
           userSaved = true
         }
         await con().addMessage(sessionKey, "assistant", res.content || null, {
+          time: Date.now(),
           tool_calls: res.tool_calls,
           ...(res.reasoning_content && { reasoning_content: res.reasoning_content }),
         })
@@ -446,10 +454,10 @@ export class AigcFallback extends plugin {
 
       if (res.content) {
         if (!userSaved) {
-          await con().addMessage(sessionKey, "user", userMsg, images ? { images } : {})
+          await con().addMessage(sessionKey, "user", userMsg, { time: Date.now(), ...(images ? { images } : {}) })
           userSaved = true
         }
-        await con().addMessage(sessionKey, "assistant", res.content, res.reasoning_content ? { reasoning_content: res.reasoning_content } : {})
+        await con().addMessage(sessionKey, "assistant", res.content, { time: Date.now(), ...(res.reasoning_content ? { reasoning_content: res.reasoning_content } : {}) })
 
         if (res.reasoning_content && cfg.aigc?.show_thinking) {
           const thinkingMsg = await common.makeForwardMsg(this.e, [
@@ -469,7 +477,7 @@ export class AigcFallback extends plugin {
     log.warn(`超限`)
     const finalReply = await Bot.aigc.provider.chat(await con().getMessages(sessionKey))
     if (finalReply.content) {
-      await con().addMessage(sessionKey, "assistant", finalReply.content, finalReply.reasoning_content ? { reasoning_content: finalReply.reasoning_content } : {})
+      await con().addMessage(sessionKey, "assistant", finalReply.content, { time: Date.now(), ...(finalReply.reasoning_content ? { reasoning_content: finalReply.reasoning_content } : {}) })
       log.warn(`工具轮次超限，降级回复成功`)
       return this._splitReply(finalReply.content)
     }
