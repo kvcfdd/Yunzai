@@ -33,21 +33,37 @@ export class AigcFallback extends plugin {
     })
   }
 
-  /** 将 LLM 回复中的 [表情名] → QQ 表情，[@QQ号] → at 消息段 */
+  /** LLM 回复 → QQ 消息段: @name/@QQ 转为 at，[表情名] 转为表情 */
   _processContent(text) {
     if (typeof text !== "string" || !text) return text
 
     const parts = []
     let last = 0
-    const re = /\[([\p{Script=Han}A-Z]+)\]|\[@(\d+)\]/gu
+    // @mention: 前面有无空格均可，后面必须空格或结尾；face: [中文/A-Z]
+    const re = /(\s?)@([\p{Script=Han}\w]+)(?=\s|$)|\[([\p{Script=Han}A-Z]+)\]/gu
     let m
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) parts.push({ type: "text", data: { text: text.slice(last, m.index) } })
-      if (m[1]) {
-        const id = faceId(m[1])
+      if (m[2]) {
+        if (m[1]) parts.push({ type: "text", data: { text: m[1] } })
+        const target = m[2]
+        if (/^\d+$/.test(target)) {
+          parts.push(global.segment.at(target))
+        } else {
+          let qq = null
+          try {
+            if (this.e?.isGroup) {
+              const ml = Bot.gml?.get(this.e.group_id)
+              if (ml) for (const [id, info] of ml) {
+                if (info.card === target || info.nickname === target) { qq = id; break }
+              }
+            }
+          } catch {}
+          qq ? parts.push(global.segment.at(qq)) : parts.push({ type: "text", data: { text: m[0] } })
+        }
+      } else if (m[3]) {
+        const id = faceId(m[3])
         parts.push(id >= 0 ? { type: "face", id } : { type: "text", data: { text: m[0] } })
-      } else if (m[2]) {
-        parts.push(global.segment.at(m[2]))
       }
       last = m.index + m[0].length
     }
@@ -154,6 +170,18 @@ export class AigcFallback extends plugin {
 
   // AIGC 对话主流程
 
+  /** at 目标 → 显示名: 全体成员 / 群名片 / QQ号 */
+  _resolveAtName(qq) {
+    if (qq === "all") return "全体成员"
+    try {
+      if (this.e?.isGroup) {
+        const m = Bot.pickMember(this.e.group_id, qq)
+        return m.card || m.nickname || String(qq)
+      }
+    } catch {}
+    return String(qq)
+  }
+
   /** 从原始消息段重建完整文本，保留 @ 和图片等上下文 */
   _getUserMsg() {
     const segs = this.e.message
@@ -165,14 +193,7 @@ export class AigcFallback extends plugin {
         parts.push(seg.text || "")
       } else if (seg.type === "at") {
         if (seg.qq == this.e.self_id) continue
-        let name = String(seg.qq)
-        try {
-          if (this.e.isGroup) {
-            const m = Bot.pickMember(this.e.group_id, seg.qq)
-            name = m.card || m.nickname || name
-          }
-        } catch {}
-        parts.push(` @${name} `)
+        parts.push(` @${this._resolveAtName(seg.qq)} `)
       } else if (seg.type === "image") {
         parts.push("[图片]")
       } else if (seg.type === "file") {
@@ -216,10 +237,10 @@ export class AigcFallback extends plugin {
     const prefixFilter = cfg.aigc?.prefix_filter
     if (prefixFilter?.length && prefixFilter.some(p => userMsg.startsWith(p))) return false
 
-    // 并发锁：同一用户上一轮未结束时拒绝新请求，5 分钟自动过期
+    // 并发锁：同一用户上一轮未结束时拒绝新请求，8 分钟自动过期
     const lockKey = `aigc:lock:${this.e.user_id}`
     if (await redis.get(lockKey)) return false
-    await redis.set(lockKey, "1", { EX: 300 })
+    await redis.set(lockKey, "1", { EX: 480 })
 
     const key = con().sessionKey(
       this.e.self_id,
@@ -245,7 +266,7 @@ export class AigcFallback extends plugin {
 
   /** 构建 system prompt：基础提示词 + 时间 + 工具规则 + 记忆 + 知识库 + 环境上下文 */
   async _buildSystem(userMsg) {
-    const systemPrompt = `你的名字叫 ${cfg.aigc?.bot_name || "AIGC-Yunzai"}。${cfg.aigc?.system_prompt || "You are an intelligent chatbot assistant."}`
+    const systemPrompt = `你的名字叫${cfg.aigc?.bot_name || "AIGC Bot"}，${cfg.aigc?.system_prompt || "You are an intelligent chatbot assistant."}`
       + (cfg.aigc?.split_reply ? `To send multiple messages in one response, use <x><x><x> as a separator between them. Example: First message<x><x><x>Second message<x><x><x>Third message. The system will split and send them in order.` : "")
 
     const timeStr = formatDate(new Date(), "full")
@@ -338,7 +359,7 @@ export class AigcFallback extends plugin {
     }
   }
 
-  /** 从消息中提取纯文本，去除 CQ 码 */
+  /** 从群聊历史消息段重建完整文本，保留 @/表情/图片/文件 */
   _extractMsgText(msg) {
     const message = msg.message
     if (!message) {
@@ -346,10 +367,27 @@ export class AigcFallback extends plugin {
     }
     if (typeof message === "string") return message
     if (!Array.isArray(message)) return ""
-    return message
-      .filter(seg => seg.type === "text")
-      .map(seg => seg.text || "")
-      .join("")
+
+    const parts = []
+    for (const seg of message) {
+      if (seg.type === "text") {
+        parts.push(seg.text || "")
+      } else if (seg.type === "at") {
+        parts.push(seg.qq === "all" ? "@全体成员" : `@${seg.qq}`)
+      } else if (seg.type === "image") {
+        parts.push("[图片]")
+      } else if (seg.type === "file") {
+        parts.push("[文件]")
+      } else if (seg.type === "face") {
+        const name = faceName(seg.id)
+        parts.push(name ? `[${name}]` : "[表情]")
+      } else if (seg.type === "video") {
+        parts.push("[视频]")
+      } else if (seg.type === "record" || seg.type === "audio") {
+        parts.push("[语音]")
+      }
+    }
+    return parts.join("").trim()
   }
 
   /** 工具调用循环：LLM 回复 → tool_calls 则执行并回传 → 文本则发送并退出 */
