@@ -2,28 +2,13 @@ import cfg from "../../lib/config/config.js"
 import runtime from "../../lib/aigc/runtime.js"
 import common from "../../lib/common/common.js"
 import { formatDate } from "../../lib/aigc/helpers/time.js"
+import { faceName, faceId } from "../../lib/aigc/helpers/face.js"
+import log from "../../lib/aigc/helpers/log.js"
 
 const con = () => Bot.aigc.conversation
 const tools = () => Bot.aigc.tools
 const kb = () => Bot.aigc.knowledge
 const MAX_TOOL_ROUNDS = 5
-
-// QQ 表情名 → 表情 ID 映射
-const FACE_MAP = {
-  惊讶: 0, 撇嘴: 1, 色: 2, 发呆: 3, 得意: 4, 流泪: 5, 害羞: 6, 闭嘴: 7, 睡: 8,
-  大哭: 9, 尴尬: 10, 发怒: 11, 调皮: 12, 呲牙: 13, 微笑: 14, 难过: 15, 酷: 16,
-  抓狂: 18, 吐: 19, 偷笑: 20, 可爱: 21, 白眼: 22, 傲慢: 23, 饥饿: 24, 困: 25,
-  惊恐: 26, 流汗: 27, 憨笑: 28, 悠闲: 29, 奋斗: 30, 咒骂: 31, 疑问: 32, 嘘: 33,
-  晕: 34, 折磨: 35, 衰: 36, 骷髅: 37, 敲打: 38, 再见: 39, 擦汗: 40, 抠鼻: 41,
-  鼓掌: 42, 糗大了: 43, 坏笑: 44, 左哼哼: 45, 右哼哼: 46, 哈欠: 47, 鄙视: 48,
-  委屈: 49, 快哭了: 50, 阴险: 51, 亲亲: 52, 吓: 53, 可怜: 54, 菜刀: 55, 西瓜: 56,
-  啤酒: 57, 篮球: 58, 乒乓: 59, 咖啡: 60, 饭: 61, 猪头: 62, 玫瑰: 63, 凋谢: 64,
-  示爱: 65, 爱心: 66, 心碎: 67, 蛋糕: 68, 闪电: 69, 炸弹: 70, 刀: 71, 足球: 72,
-  瓢虫: 73, 便便: 74, 月亮: 75, 太阳: 76, 礼物: 77, 拥抱: 78, 强: 79, 弱: 80,
-  握手: 81, 胜利: 82, 抱拳: 83, 勾引: 84, 拳头: 85, 差劲: 86, 爱你: 87, NO: 88,
-  OK: 89, 爱情: 90, 飞吻: 91, 跳跳: 92, 发抖: 93, 怄火: 94, 转圈: 95, 磕头: 96,
-  回头: 97, 跳绳: 98, 挥手: 99, 激动: 100, 街舞: 101, 献吻: 102,
-}
 
 /** AIGC 入口：被 @ 且无命令匹配时触发，支持工具调用、长期记忆、知识库检索 */
 export class AigcFallback extends plugin {
@@ -59,8 +44,8 @@ export class AigcFallback extends plugin {
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) parts.push({ type: "text", data: { text: text.slice(last, m.index) } })
       if (m[1]) {
-        const id = FACE_MAP[m[1]]
-        parts.push(id !== undefined ? { type: "face", id } : { type: "text", data: { text: m[0] } })
+        const id = faceId(m[1])
+        parts.push(id >= 0 ? { type: "face", id } : { type: "text", data: { text: m[0] } })
       } else if (m[2]) {
         parts.push(global.segment.at(m[2]))
       }
@@ -119,7 +104,7 @@ export class AigcFallback extends plugin {
     await con().clearSession(key)
 
     if (hasMem || hasConv) {
-      logger.info(`用户 ${this.e.user_id} 清除了会话`)
+      log.info(`用户 ${this.e.user_id} 清除了会话`)
       return this.reply("AIGC记忆已清除", true)
     }
     return this.reply("暂无记忆缓存", true)
@@ -129,7 +114,7 @@ export class AigcFallback extends plugin {
     if (!this.e.isMaster) return false
     await Bot.aigc.memory.clearAll()
     await con().clearAll()
-    logger.info("管理员清除了全部用户的记忆和会话")
+    log.info("管理员清除了全部用户的记忆和会话")
     return this.reply("已清除全部用户的记忆与对话缓存", true)
   }
 
@@ -169,6 +154,37 @@ export class AigcFallback extends plugin {
 
   // AIGC 对话主流程
 
+  /** 从原始消息段重建完整文本，保留 @ 和图片等上下文 */
+  _getUserMsg() {
+    const segs = this.e.message
+    if (!segs?.length) return this.e.msg?.trim() || ""
+
+    const parts = []
+    for (const seg of segs) {
+      if (seg.type === "text") {
+        parts.push(seg.text || "")
+      } else if (seg.type === "at") {
+        if (seg.qq == this.e.self_id) continue
+        let name = String(seg.qq)
+        try {
+          if (this.e.isGroup) {
+            const m = Bot.pickMember(this.e.group_id, seg.qq)
+            name = m.card || m.nickname || name
+          }
+        } catch {}
+        parts.push(` @${name} `)
+      } else if (seg.type === "image") {
+        parts.push("[图片]")
+      } else if (seg.type === "file") {
+        parts.push("[文件]")
+      } else if (seg.type === "face") {
+        const name = faceName(seg.id)
+        parts.push(name ? `[${name}]` : "[表情]")
+      }
+    }
+    return parts.join("").trim()
+  }
+
   async aigcChat() {
     if (cfg.aigc?.enable === false) return false
     if (this.e._synthetic) return false
@@ -193,7 +209,7 @@ export class AigcFallback extends plugin {
       }
     }
 
-    const userMsg = this.e.msg?.trim()
+    const userMsg = this._getUserMsg()
     if (!userMsg) return false
 
     // 前缀过滤（如 "[自动回复]"）
@@ -211,7 +227,7 @@ export class AigcFallback extends plugin {
       this.e.isGroup ? this.e.group_id : "",
     )
 
-    logger.info(`用户 ${this.e.user_id} 发起对话`)
+    log.info(`用户 ${this.e.user_id} 发起对话`)
 
     await con().setSystem(key, await this._buildSystem(userMsg))
 
@@ -220,7 +236,7 @@ export class AigcFallback extends plugin {
     try {
       await this._replyLoop(key, userMsg, images)
     } catch (err) {
-      logger.error(`对话异常: ${err.message}`)
+      log.error(`对话异常: ${err.message}`)
       await this.reply("AIGC 服务暂时不可用，请稍后重试", true)
     } finally {
       await redis.del(lockKey)
@@ -229,23 +245,25 @@ export class AigcFallback extends plugin {
 
   /** 构建 system prompt：基础提示词 + 时间 + 工具规则 + 记忆 + 知识库 + 环境上下文 */
   async _buildSystem(userMsg) {
-    const systemPrompt = (cfg.aigc?.system_prompt || "You are AIGC-Yunzai, an intelligent chatbot assistant.")
-      + (cfg.aigc?.split_reply ? `如果你想要一次回复多条消息，可以使用 <x><x><x> 分割文本，例如：第一条消息内容<x><x><x>第二条消息内容<x><x><x>第三条消息内容，系统就会帮你分为3条消息依次发送。` : "")
+    const systemPrompt = `你的名字叫 ${cfg.aigc?.bot_name || "AIGC-Yunzai"}。${cfg.aigc?.system_prompt || "You are an intelligent chatbot assistant."}`
+      + (cfg.aigc?.split_reply ? `To send multiple messages in one response, use <x><x><x> as a separator between them. Example: First message<x><x><x>Second message<x><x><x>Third message. The system will split and send them in order.` : "")
 
     const timeStr = formatDate(new Date(), "full")
     const toolRules = [
-      "## Tool usage rules",
-      "- To send images: ALWAYS call search(type='image') first, then send_image with the returned URL and Referer. NEVER make up image URLs.",
-      "- To send music/video: search(type='music'|'video') first, then send_media with the returned ID.",
-      "- To fetch web content: search(type='web') first, then browse for detailed content.",
-      "- render is for text layout (tables, code, reports) — NOT for photos or AI-generated art.",
-      "- interact handles poke (戳一戳) and like (点赞) in both private and group chats.",
-      "- group_admin handles kick, ban, mute, set_admin, quit and other group management. These are DESTRUCTIVE — only invoke when the user explicitly and unambiguously requests a specific action, and the user must be the group owner or admin. If unsure, ask for confirmation before acting.",
-      "- block / remember / forget are administrative. Only use when the user explicitly requests these actions.",
-      "- Prefer 1-2 tool calls per response. If a tool fails, explain the failure in text rather than retrying repeatedly.",
+      "## Tool usage guide",
+      "- When you want real-time info or research, search the web then browse for details.",
+      "- When you want to send images, search(type='image') first, then send_image with the results.",
+      "- When you want to share music or video, search(type='music'|'video') first, then send_media with the ID.",
+      "- When your reply contains tables, code, or complex formatting, use render to screenshot it.",
+      "- When you want to be friendly or liven up the mood, use interact to like or poke.",
+      "- For group management (kick, ban, set_admin, etc.), use group_admin. If a user asks you to perform an action on someone else, verify that the requesting user has the permission (owner/admin) to do so. If you initiate the action yourself, confirm you have bot permission in the group first.",
+      "- Use recall_memory to check what you already know about a user. When they share something worth remembering, use remember. When a memory is wrong or outdated, use forget.",
+      "- When you don't want to continue chatting with a user, use block to blacklist them.",
+      "- When the user wants to use a bot command (bind UID, check stats, etc.), list_commands first to check the format, then invoke_command.",
+      "- Use query to look up who you're talking to or identify your owner.",
     ].join("\n")
     const parts = [
-      `${systemPrompt}现在是${timeStr}，注意回复内容的时效性。\n${toolRules}`,
+      `${systemPrompt}Current time: ${timeStr}. Take timeliness into account when answering.\n${toolRules}`,
     ]
 
     const memCtx = await Bot.aigc.memory.toContext(this.e.user_id)
@@ -315,7 +333,7 @@ export class AigcFallback extends plugin {
 
       return lines.length ? lines.join("\n") : null
     } catch (err) {
-      logger.warn(`群聊记录获取失败: ${err.message}`)
+      log.warn(`群聊记录获取失败: ${err.message}`)
       return null
     }
   }
@@ -356,7 +374,7 @@ export class AigcFallback extends plugin {
       const res = await Bot.aigc.provider.chat(messages, opts)
 
       if (res.blocked) {
-        logger.warn(`安全拦截  ${res.finishReason}`)
+        log.warn(`安全拦截  ${res.finishReason}`)
         return this.reply("内容被安全策略拦截", true)
       }
 
@@ -364,7 +382,7 @@ export class AigcFallback extends plugin {
         if (res.content) await this._splitReply(res.content)
 
         const names = res.tool_calls.map(c => c.function?.name).filter(Boolean).join(",")
-        logger.info(`调用工具: ${names}`)
+        log.info(`调用工具: ${names}`)
 
         if (!userSaved) {
           await con().addMessage(sessionKey, "user", userMsg, images ? { images } : {})
@@ -405,20 +423,20 @@ export class AigcFallback extends plugin {
         return this._splitReply(res.content)
       }
 
-      logger.warn(`空响应`)
+      log.warn(`空响应`)
       return
     }
 
     // 轮次超限，最后一次不带 tools 尝试
-    logger.warn(`超限`)
+    log.warn(`超限`)
     const finalReply = await Bot.aigc.provider.chat(await con().getMessages(sessionKey))
     if (finalReply.content) {
       await con().addMessage(sessionKey, "assistant", finalReply.content, finalReply.reasoning_content ? { reasoning_content: finalReply.reasoning_content } : {})
-      logger.warn(`工具轮次超限，降级回复成功`)
+      log.warn(`工具轮次超限，降级回复成功`)
       return this._splitReply(finalReply.content)
     }
 
-    logger.error(`全部失败`)
+    log.error(`全部失败`)
     return this.reply("工具调用轮次超限，请简化你的请求后重试", true)
   }
 }
