@@ -8,7 +8,7 @@ import log from "../../lib/aigc/helpers/log.js"
 const con = () => Bot.aigc.conversation
 const tools = () => Bot.aigc.tools
 const kb = () => Bot.aigc.knowledge
-const MAX_TOOL_ROUNDS = 5
+const MAX_TOOL_ROUNDS = 6
 
 /** AIGC 入口：被 @ 且无命令匹配时触发，支持工具调用、长期记忆、知识库检索 */
 export class AigcFallback extends plugin {
@@ -58,7 +58,7 @@ export class AigcFallback extends plugin {
                 if (info.card === target || info.nickname === target) { qq = id; break }
               }
             }
-          } catch {}
+          } catch { }
           qq ? parts.push(segment.at(qq)) : parts.push({ type: "text", data: { text: m[0] } })
         }
       } else if (m[3]) {
@@ -178,7 +178,7 @@ export class AigcFallback extends plugin {
         const m = Bot.pickMember(this.e.group_id, qq)
         return m.card || m.nickname || String(qq)
       }
-    } catch {}
+    } catch { }
     return String(qq)
   }
 
@@ -194,8 +194,6 @@ export class AigcFallback extends plugin {
       } else if (seg.type === "at") {
         if (seg.qq == this.e.self_id) continue
         parts.push(` @${this._resolveAtName(seg.qq)} `)
-      } else if (seg.type === "image") {
-        parts.push("[图片]")
       } else if (seg.type === "file") {
         parts.push("[文件]")
       } else if (seg.type === "face") {
@@ -272,6 +270,7 @@ export class AigcFallback extends plugin {
     const timeStr = formatDate(new Date(), "full")
     const toolRules = [
       "## Tool usage guide",
+      "- You may call tools for up to 4 consecutive rounds. After that, stop calling tools and reply to the user based on the information you already have, even if incomplete.",
       "- When you want real-time info or research, search the web then browse for details.",
       "- When you want to send images, search(type='image') first, then send_image with the results.",
       "- When you want to share music or video, search(type='music'|'video') first, then send_media with the ID.",
@@ -348,7 +347,7 @@ export class AigcFallback extends plugin {
         let time = ""
         if (msg.time) {
           const d = new Date(msg.time * 1000)
-          time = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+          time = `${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
         }
 
         const text = this._extractMsgText(msg)
@@ -380,7 +379,7 @@ export class AigcFallback extends plugin {
       if (seg.type === "text") {
         parts.push(seg.text || "")
       } else if (seg.type === "at") {
-        parts.push(seg.qq === "all" ? "@全体成员" : `@${seg.qq}`)
+        parts.push(` @${this._resolveAtName(seg.qq)} `)
       } else if (seg.type === "image") {
         parts.push("[图片]")
       } else if (seg.type === "file") {
@@ -397,16 +396,19 @@ export class AigcFallback extends plugin {
     return parts.join("").trim()
   }
 
-  /** 工具调用循环：LLM 回复 → tool_calls 则执行并回传 → 文本则发送并退出 */
+  /** 工具调用循环：LLM 回复 → tool_calls 则执行并回传 → 文本则发送并退出。
+   *  整轮对话在内存中累积，最终回复生成后才原子写入缓存，避免中途死机留下残缺记录。 */
   async _replyLoop(sessionKey, userMsg, images) {
-    let userSaved = false
+    const baseMessages = await con().getMessages(sessionKey)
+    const pending = []
+    let userPushed = false
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      let messages = await con().getMessages(sessionKey)
-      if (!userSaved) {
+      const messages = [...baseMessages, ...pending]
+      if (!userPushed) {
         const um = { role: "user", content: userMsg }
         if (images) um.images = images
-        messages = [...messages, um]
+        messages.push(um)
       }
 
       const opts = {}
@@ -429,12 +431,13 @@ export class AigcFallback extends plugin {
         const names = res.tool_calls.map(c => c.function?.name).filter(Boolean).join(",")
         log.info(`调用工具: ${names}`)
 
-        if (!userSaved) {
-          await con().addMessage(sessionKey, "user", userMsg, { time: Date.now(), ...(images ? { images } : {}) })
-          userSaved = true
+        if (!userPushed) {
+          pending.push({ role: "user", content: userMsg, time: Date.now(), ...(images ? { images } : {}) })
+          userPushed = true
         }
-        await con().addMessage(sessionKey, "assistant", res.content || null, {
-          time: Date.now(),
+        pending.push({
+          role: "assistant",
+          content: res.content || null,
           tool_calls: res.tool_calls,
           ...(res.reasoning_content && { reasoning_content: res.reasoning_content }),
         })
@@ -447,17 +450,23 @@ export class AigcFallback extends plugin {
           const r = results[i]
           const callId = res.tool_calls[i]?.id || `call_${i}`
           const payload = "error" in r ? r.error : r.result
-          await con().addMessage(sessionKey, "tool", JSON.stringify(payload ?? ""), { tool_call_id: callId })
+          pending.push({ role: "tool", content: JSON.stringify(payload ?? ""), tool_call_id: callId })
         }
         continue
       }
 
       if (res.content) {
-        if (!userSaved) {
-          await con().addMessage(sessionKey, "user", userMsg, { time: Date.now(), ...(images ? { images } : {}) })
-          userSaved = true
+        if (!userPushed) {
+          pending.push({ role: "user", content: userMsg, time: Date.now(), ...(images ? { images } : {}) })
+          userPushed = true
         }
-        await con().addMessage(sessionKey, "assistant", res.content, { time: Date.now(), ...(res.reasoning_content ? { reasoning_content: res.reasoning_content } : {}) })
+        pending.push({
+          role: "assistant",
+          content: res.content,
+          ...(res.reasoning_content && { reasoning_content: res.reasoning_content }),
+        })
+
+        await con().appendMessages(sessionKey, pending)
 
         if (res.reasoning_content && cfg.aigc?.show_thinking) {
           const thinkingMsg = await common.makeForwardMsg(this.e, [
@@ -475,9 +484,23 @@ export class AigcFallback extends plugin {
 
     // 轮次超限，最后一次不带 tools 尝试
     log.warn(`超限`)
-    const finalReply = await Bot.aigc.provider.chat(await con().getMessages(sessionKey))
+    const fallbackMessages = [...baseMessages, ...pending]
+    if (!userPushed) {
+      const um = { role: "user", content: userMsg }
+      if (images) um.images = images
+      fallbackMessages.push(um)
+    }
+    const finalReply = await Bot.aigc.provider.chat(fallbackMessages)
     if (finalReply.content) {
-      await con().addMessage(sessionKey, "assistant", finalReply.content, { time: Date.now(), ...(finalReply.reasoning_content ? { reasoning_content: finalReply.reasoning_content } : {}) })
+      if (!userPushed) {
+        pending.push({ role: "user", content: userMsg, time: Date.now(), ...(images ? { images } : {}) })
+      }
+      pending.push({
+        role: "assistant",
+        content: finalReply.content,
+        ...(finalReply.reasoning_content && { reasoning_content: finalReply.reasoning_content }),
+      })
+      await con().appendMessages(sessionKey, pending)
       log.warn(`工具轮次超限，降级回复成功`)
       return this._splitReply(finalReply.content)
     }
