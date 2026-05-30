@@ -51,7 +51,7 @@ node app
 | `forget`        | 删除指定的用户记忆                                                                          |
 | `recall_memory` | 查看当前用户全部记忆                                                                        |
 | `block`         | 将用户加入黑名单                                                                            |
-| `enable_voice`  | 启用语音回复(一次性)                                                                        |
+| `enable_voice`  | 启用语音回复(一次性，需配置key)                                                             |
 
 </details>
 
