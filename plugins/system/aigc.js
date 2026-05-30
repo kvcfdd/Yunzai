@@ -235,10 +235,10 @@ export class AigcFallback extends plugin {
     const prefixFilter = cfg.aigc?.prefix_filter
     if (prefixFilter?.length && prefixFilter.some(p => userMsg.startsWith(p))) return false
 
-    // 并发锁：同一用户上一轮未结束时拒绝新请求，8 分钟自动过期
+    // 并发锁：同一用户上一轮未结束时拒绝新请求，5 分钟自动过期
     const lockKey = `aigc:lock:${this.e.user_id}`
     if (await redis.get(lockKey)) return false
-    await redis.set(lockKey, "1", { EX: 480 })
+    await redis.set(lockKey, "1", { EX: 300 })
 
     const key = con().sessionKey(
       this.e.self_id,
@@ -280,6 +280,7 @@ export class AigcFallback extends plugin {
       "- Use recall_memory to check what you already know about a user. When they share something worth remembering, use remember. When a memory is wrong or outdated, use forget.",
       "- When you don't want to continue chatting with a user, use block to blacklist them.",
       "- Use query to look up who you're talking to or identify your owner.",
+      "- When you want to use voice replies, you can use enable_voice"
     ].join("\n")
     const parts = [
       `${systemPrompt}Current time: ${timeStr}. Take timeliness into account when answering.\n${toolRules}`,
@@ -395,6 +396,20 @@ export class AigcFallback extends plugin {
     return parts.join("").trim()
   }
 
+  /** 发送回复：检查语音标识 → 若开启则转语音，否则纯文本 */
+  async _sendReply(text) {
+    try {
+      const emo_switch = await Bot.aigc.voice.consume(this.e.user_id)
+      if (emo_switch) {
+        const recordFile = await Bot.aigc.voice.tts(text, emo_switch)
+        return this.e.reply(segment.record(recordFile))
+      }
+    } catch (err) {
+      log.error(`语音转换失败，降级为文本: ${err.message}`)
+    }
+    return this._splitReply(text)
+  }
+
   /** 工具调用循环：LLM 回复 → tool_calls 则执行并回传 → 文本则发送并退出。
    *  整轮对话在内存中累积，最终回复生成后才原子写入缓存，避免中途死机留下残缺记录。 */
   async _replyLoop(sessionKey, userMsg, images) {
@@ -474,7 +489,7 @@ export class AigcFallback extends plugin {
           await this.reply(thinkingMsg, true)
         }
 
-        return this._splitReply(res.content)
+        return this._sendReply(res.content)
       }
 
       log.warn(`空响应`)
@@ -501,7 +516,7 @@ export class AigcFallback extends plugin {
       })
       await con().appendMessages(sessionKey, pending)
       log.warn(`工具轮次超限，降级回复成功`)
-      return this._splitReply(finalReply.content)
+      return this._sendReply(finalReply.content)
     }
 
     log.error(`全部失败`)

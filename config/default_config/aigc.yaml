@@ -73,3 +73,11 @@ split_reply: false
 bilibili_cookie: ""
 # 对话历史长度，单位为消息轮数
 max_history: 30
+
+# 语音合成 (悟声 Wusound TTS)
+voice:
+  api_key: "" # 悟声 API Key，在 https://dev.wusound.cn 开发者中心获取
+  voice_id: "" # 默认语音角色 UUID
+  break_clone: true # 是否启用启用偏向文本的情感风格
+  preset: balance # 参数预设: creative(创意/最佳表现力) | balance(均衡) | stable(稳定)
+  speech_rate: 1 # 语速 0.5-2.0，越大越慢

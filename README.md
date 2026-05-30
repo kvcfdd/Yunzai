@@ -30,7 +30,35 @@ npx playwright install chromium
 node app
 ```
 
+推荐使用[锅巴插件](https://github.com/kvcfdd/guoba-plugin)配置
+
+## AI 内置工具
+
+<details>
+<summary>展开查看 13 个内置工具</summary>
+
+| 工具            | 说明                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `search`        | 搜索互联网，支持网页/图片/音乐/视频(需搭建[搜索服务](https://github.com/kvcfdd/metasearch)) |
+| `browse`        | 抓取网页提取正文内容                                                                        |
+| `send_image`    | 下载图片并发送到聊天(本地没问题不知道为啥到了服务器就崩涅，难道是抽象代理有鬼咩)            |
+| `send_media`    | 发送网易云音乐卡片或 B 站视频(需配置B站ck)                                                  |
+| `render`        | 渲染 Markdown/HTML 为图片或视频                                                             |
+| `query`         | 查询 Bot 主人或指定用户的身份信息                                                           |
+| `group_admin`   | 群管理：踢人、禁言、设管理、改名片、公告等                                                  |
+| `interact`      | 互动：点赞、戳一戳、柴郡猫表情包                                                            |
+| `remember`      | 保存用户信息到长期记忆                                                                      |
+| `forget`        | 删除指定的用户记忆                                                                          |
+| `recall_memory` | 查看当前用户全部记忆                                                                        |
+| `block`         | 将用户加入黑名单                                                                            |
+| `enable_voice`  | 启用语音回复(一次性)                                                                        |
+
+</details>
+
 ## PCP 插件能力协议
+
+<details>
+<summary>展开查看 PCP 协议说明</summary>
 
 在插件构造函数中声明 `tools[]`，PCP 自动识别并注册为 LLM 可调用的 Function Calling 工具。与 MCP 对称——MCP 发现外部工具，PCP 发现本地插件能力，共享同一个 ToolRegistry
 
@@ -269,6 +297,8 @@ async getStats(args) {
 
 
 **PCP为随意命名，无任何歧义，且处于尝试阶段，如需使用建议自己改改尝试即可**
+
+</details>
 
 ---
 
