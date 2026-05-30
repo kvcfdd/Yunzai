@@ -279,7 +279,6 @@ export class AigcFallback extends plugin {
       "- For group management (kick, ban, set_admin, etc.), use group_admin. If a user asks you to perform an action on someone else, verify that the requesting user has the permission (owner/admin) to do so. If you initiate the action yourself, confirm you have bot permission in the group first.",
       "- Use recall_memory to check what you already know about a user. When they share something worth remembering, use remember. When a memory is wrong or outdated, use forget.",
       "- When you don't want to continue chatting with a user, use block to blacklist them.",
-      "- When the user wants to use a bot command (bind UID, check stats, etc.), list_commands first to check the format, then invoke_command.",
       "- Use query to look up who you're talking to or identify your owner.",
     ].join("\n")
     const parts = [
