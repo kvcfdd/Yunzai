@@ -65,7 +65,7 @@ prefix_filter:
 group_history_count: 30
 # 是否将思维链以合并转发方式单独发送
 show_thinking: false
-# 思考模式：启用后模型会在回复前进行内部推理（只控制OpenAI兼容模式且需模型支持）
+# 思考模式：启用后模型会在回复前进行内部推理（只控制OpenAI兼容模式且需模型支持）不是很可控，毕竟就写了一个通用接口，开了可能没反应或报错，不建议开启
 thinking: false
 # 是否允许分句回复
 split_reply: false
