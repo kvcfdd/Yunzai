@@ -291,9 +291,11 @@ async getStats(args) {
 
 - **工具名唯一性**：工具名由 `{插件名}_{fnc}` 自动生成并做清理（去特殊字符、限 64 字符），冲突时自动加 hash 后缀
 - **`this.e` 上下文**：handler 中的 `this.e` 是 PCP 桥接层自动设置的原始消息事件，支持 `this.reply()` 等所有基类方法
+- **构造器子对象陷阱**：PCP 桥接层以 `new ClassName()` 无参实例化插件，**构造器中传入子对象的 `e` 此时为 `undefined`**。若插件在构造器内 `this.xxx = new SubModel(e)` 创建了依赖事件上下文的子对象，需在 handler 的 PCP 分支手动同步 `this.xxx.e = this.e`，否则子对象内部访问 `this.e.xxx` 会抛出 `Cannot read properties of undefined`
 - **并发**：`Promise.all` 并发执行多个 tool call，建议 handler 中通过 `{ ...ctx.event }` 创建独立事件副本避免竞态
 - **返回值**：非 `reply` 模式下，`return null` 或 `return undefined` 会被转换为 `"[完成]"`；正常返回字符串则直接交给 LLM
 - **非 reply 模式也可 reply**：即使没设 `reply: true`，handler 内部仍可调用 `this.reply()` 直接发消息（如发图），同时返回字符串给 LLM
+- **`reply: true` 遗漏陷阱**：若 handler 的核心输出是 `this.reply()` 发出的图片/文件，**必须设 `reply: true`**，否则 LLM 拿到的是方法返回值（如 `true`/`undefined`），看不到有效结果可能反复调用同一工具造成死循环
 
 
 **PCP为随意命名，无任何歧义，且处于尝试阶段，如需使用建议自己改改尝试即可**

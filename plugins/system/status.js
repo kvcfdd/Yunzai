@@ -18,7 +18,6 @@ export class status extends plugin {
         {
           fnc: "getStatus",
           description: "获取机器人运行状态：版本、在线时长、内存使用、系统信息",
-          permission: "master",
         },
         {
           fnc: "getStats",
@@ -27,7 +26,6 @@ export class status extends plugin {
             scope: { type: "string", desc: "统计范围", enum: ["global", "user", "group"] },
             target: { type: "number", desc: "用户或群号，scope=user/group 时指定", optional: true },
           },
-          permission: "master",
         },
       ],
     })
