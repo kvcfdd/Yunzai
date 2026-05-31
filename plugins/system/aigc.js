@@ -267,6 +267,14 @@ export class AigcFallback extends plugin {
     const systemPrompt = `你的名字叫${cfg.aigc?.bot_name || "AIGC Bot"}，${cfg.aigc?.system_prompt || "You are an intelligent chatbot assistant."}`
       + (cfg.aigc?.split_reply ? `To send multiple messages in one response, use <x><x><x> as a separator between them. Example: First message<x><x><x>Second message<x><x><x>Third message. The system will split and send them in order.` : "")
 
+    const thinkingRule = [
+      "## Thinking format (IMPORTANT)",
+      "You MUST follow this output format for EVERY reply:",
+      "1. Put ALL your reasoning, analysis, and chain-of-thought inside <think>...</think> tags.",
+      "2. Put the actual text you want to show to the user AFTER the </think> closing tag.",
+      "3. The content inside <think> tags is hidden from the user — it is only used internally for logging. Do NOT put user-visible content inside <think>."
+    ].join("\n")
+
     const timeStr = formatDate(new Date(), "full")
     const toolRules = [
       "## Tool usage guide",
@@ -283,7 +291,7 @@ export class AigcFallback extends plugin {
       "- When you want to use voice replies, you can use enable_voice"
     ].join("\n")
     const parts = [
-      `${systemPrompt}Current time: ${timeStr}. Take timeliness into account when answering.\n${toolRules}`,
+      `${systemPrompt}\nCurrent time: ${timeStr}. Take timeliness into account when answering.\n${thinkingRule}\n${toolRules}`,
     ]
 
     const memCtx = await Bot.aigc.memory.toContext(this.e.user_id)
