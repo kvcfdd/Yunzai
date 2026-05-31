@@ -1,0 +1,24 @@
+# 总开关
+enable: false
+
+# 定时 cron
+cron: "0 20 4 * * *"
+
+# Git 仓库路径，支持相对路径和绝对路径，更新为强制更新，仅用于辅助图像仓库更新
+git_paths:
+  - "plugins/miao-plugin/resources/profile"
+
+# 清理路径，支持相对路径和绝对路径
+clean_paths:
+  - "data/aigc"
+
+# Git 命令超时 (毫秒)
+timeout: 120000
+
+# Mihomo 代理订阅 (仅支持Linux系统)
+mihomo:
+  enable: false # 是否启用代理订阅为维护
+  sub_url: "" # 代理订阅链接
+  exclude_regex: "中国大陆" #节点过滤
+  config_path: "/etc/mihomo/config.yaml" # 代理订阅配置文件路径
+  service_name: "mihomo" # 自启动systemctl中的对应名称用于重启
