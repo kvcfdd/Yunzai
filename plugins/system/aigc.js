@@ -288,10 +288,9 @@ export class AigcFallback extends plugin {
       "- Use recall_memory to check what you already know about a user. When they share something worth remembering, use remember. When a memory is wrong or outdated, use forget.",
       "- When you don't want to continue chatting with a user, use block to blacklist them.",
       "- Use query to look up who you're talking to or identify your owner.",
-      "- When you want to use voice replies, you can use enable_voice"
     ].join("\n")
     const parts = [
-      `${systemPrompt}\nCurrent time: ${timeStr}. Take timeliness into account when answering.\n${thinkingRule}\n${toolRules}`,
+      `${systemPrompt}Current time: ${timeStr}. Take timeliness into account when answering.\n${thinkingRule}\n${toolRules}`,
     ]
 
     const memCtx = await Bot.aigc.memory.toContext(this.e.user_id)
