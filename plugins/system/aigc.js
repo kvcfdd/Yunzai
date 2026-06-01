@@ -307,7 +307,8 @@ export class AigcFallback extends plugin {
       const role = { owner: "群主", admin: "群管理员", member: "群成员" }[e.member?.role] || e.member?.role || "群成员"
       const sex = { male: "男", female: "女", unknown: "未知" }[e.member?.sex] || e.member?.sex || "未知"
 
-      let ctx = `You are in a group chat. Group: "${e.group_name || "Unknown"}" (ID: ${e.group_id}). Your nickname in this group: ${botName}. Your QQ: ${e.self_id}. Current speaker: [${card}](qq:${e.user_id},sex:${sex},role:${role}).`
+      const avatar = `https://q.qlogo.cn/g?b=qq&s=0&nk=${e.user_id}`
+      let ctx = `You are in a group chat. Group: "${e.group_name || "Unknown"}" (ID: ${e.group_id}). Your nickname in this group: ${botName}. Your QQ: ${e.self_id}. Current speaker: [${card}](qq:${e.user_id},sex:${sex},role:${role},avatar:${avatar}).`
 
       const histCount = cfg.aigc?.group_history_count ?? 30
       if (histCount > 0) {
@@ -318,7 +319,8 @@ export class AigcFallback extends plugin {
       return ctx
     }
 
-    return `You are in a private chat. User: ${e.sender?.nickname || "Unknown"} (QQ: ${e.user_id}).`
+    const avatar = `https://q.qlogo.cn/g?b=qq&s=0&nk=${e.user_id}`
+    return `You are in a private chat. User: ${e.sender?.nickname || "Unknown"} (QQ: ${e.user_id}, avatar: ${avatar}).`
   }
 
   /** 获取群聊最近 N 条消息 */
