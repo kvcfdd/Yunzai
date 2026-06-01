@@ -266,7 +266,7 @@ export class AigcFallback extends plugin {
   /** 构建 system prompt：基础提示词 + 时间 + 工具规则 + 记忆 + 知识库 + 环境上下文 */
   async _buildSystem(userMsg) {
     const systemPrompt = `你的名字叫${cfg.aigc?.bot_name || "AIGC Bot"}，${cfg.aigc?.system_prompt || "You are an intelligent chatbot assistant."}`
-      + (cfg.aigc?.split_reply ? `To send multiple messages in one response, use <x><x><x> as a separator between them. Example: First message<x><x><x>Second message<x><x><x>Third message. The system will split and send them in order.` : "")
+      + (cfg.aigc?.split_reply ? `如果你想要一次回复多条消息，请使用 <x><x><x> 分割文本，例如：第一条消息内容<x><x><x>第二条消息内容<x><x><x>第三条消息内容，系统会帮你分为3条消息依次发送。` : "")
 
     const thinkingRule = [
       "## Thinking format (IMPORTANT)",
