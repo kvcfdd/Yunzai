@@ -256,7 +256,8 @@ export class AigcFallback extends plugin {
       await this._replyLoop(key, userMsg, images)
     } catch (err) {
       log.error(`对话异常: ${err.message}`)
-      await this.reply("AIGC 服务暂时不可用，请稍后重试", true)
+      const code = err.code ? `，错误码 ${err.code}` : ""
+      await this.reply(`请求失败${code}，请稍后重试`, true)
     } finally {
       await redis.del(lockKey)
     }
@@ -276,19 +277,7 @@ export class AigcFallback extends plugin {
     ].join("\n")
 
     const timeStr = formatDate(new Date(), "full")
-    const toolRules = [
-      "## Tool usage guide",
-      "- You may call tools for up to 4 consecutive rounds. After that, stop calling tools and reply to the user based on the information you already have, even if incomplete.",
-      "- When you want real-time info or research, search the web then browse for details.",
-      "- When you want to send images, search(type='image') first, then send_image with the results.",
-      "- When you want to share music or video, search(type='music'|'video') first, then send_media with the ID.",
-      "- When your reply contains tables, code, or complex formatting, use render(format='image') to screenshot it. Use render(format='video') for animations, canvas, or video content.",
-      "- When you want to be friendly or liven up the mood, use interact to like, poke, or send a sticker.",
-      "- For group management (kick, ban, set_admin, etc.), use group_admin. If a user asks you to perform an action on someone else, verify that the requesting user has the permission (owner/admin) to do so. If you initiate the action yourself, confirm you have bot permission in the group first.",
-      "- Use recall_memory to check what you already know about a user. When they share something worth remembering, use remember. When a memory is wrong or outdated, use forget.",
-      "- When you don't want to continue chatting with a user, use block to blacklist them.",
-      "- Use query to look up who you're talking to or identify your owner.",
-    ].join("\n")
+    const toolRules = "You may call tools for up to 4 consecutive rounds. After that, stop calling tools and reply to the user based on the information you already have, even if incomplete."
     const parts = [
       `${systemPrompt}Current time: ${timeStr}. Take timeliness into account when answering.\n${thinkingRule}\n${toolRules}`,
     ]
@@ -408,8 +397,8 @@ export class AigcFallback extends plugin {
     try {
       const emo_switch = await Bot.aigc.voice.consume(this.e.user_id)
       if (emo_switch) {
-        const recordFile = await Bot.aigc.voice.tts(text, emo_switch)
-        return this.e.reply(segment.record(recordFile))
+        const audioUrl = await Bot.aigc.voice.tts(text, emo_switch)
+        return this.e.reply(segment.record(audioUrl))
       }
     } catch (err) {
       log.error(`语音转换失败，降级为文本: ${err.message}`)

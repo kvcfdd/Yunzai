@@ -47,9 +47,7 @@ node app
 | `query`         | 查询 Bot 主人或指定用户的身份信息                                                           |
 | `group_admin`   | 群管理：踢人、禁言、设管理、改名片、公告等                                                  |
 | `interact`      | 互动：点赞、戳一戳、柴郡猫表情包                                                            |
-| `remember`      | 保存用户信息到长期记忆                                                                      |
-| `forget`        | 删除指定的用户记忆                                                                          |
-| `recall_memory` | 查看当前用户全部记忆                                                                        |
+| `memory`        | 管理用户长期记忆，支持保存和删除                                                             |
 | `block`         | 将用户加入黑名单                                                                            |
 | `enable_voice`  | 启用语音回复(一次性，需配置key)                                                             |
 
